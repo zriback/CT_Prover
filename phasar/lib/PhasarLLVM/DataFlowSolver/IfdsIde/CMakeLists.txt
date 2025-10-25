@@ -12,9 +12,10 @@ set(PHASAR_LINK_LIBS
   phasar_db
   phasar_taintconfig
   ${Boost_LIBRARIES}
-        /home/luwei/newifds/SVF/Release-build/svf-llvm/libSvfLLVM.a
-        /home/luwei/newifds/SVF/z3.obj/bin/libz3.a
-        /home/luwei/newifds/SVF/z3.obj/bin/libz3.so
+        /home/user/SVF/Release-build/lib/libSvfLLVM.a
+	/home/user/SVF/Release-build/lib/libSvfCore.a
+	#        /usr/lib/x86_64-linux-gnu/libz3.a
+        /usr/lib/x86_64-linux-gnu/libz3.so
 )
 
 set(LLVM_LINK_COMPONENTS

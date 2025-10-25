@@ -32,7 +32,7 @@ public:
 
 
     //    pttest(md);
-    dda.newrunOnModule(pag);
+    dda.runOnModule(pag);
 //    printallpts(dda);
 //    llvm::errs()<<*md;
   }

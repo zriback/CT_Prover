@@ -1,2 +1,2 @@
-
-Boogie program verifier finished with 1 verified, 0 errors
+Boogie program verifier version 2.4.1.10503, Copyright (c) 2003-2014, Microsoft.
+Error opening file "copy_mac-bool.bpl": Could not find file "/home/user/CT_Prover/bech/OpenSSL/ssl3_cbc/one_and_two/copy_mac-bool.bpl"

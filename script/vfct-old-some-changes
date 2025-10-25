@@ -290,7 +290,7 @@ def transfer(record,file,file2, recordfile = subprocess.PIPE, workdir = os.getcw
     # 需要配合bam991 一起使用
     args = "transBoolToShadow.py "+record+" "+file
     restime = runcommand(args, recordfile, workdir = workdir)
-    args = "ruby -I /home/user/CT_Prover/bam/bam-991/lib /home/user/CT_Prover/bam/bam-991/bin/bam --process_mark "+ file + " -o " + file2
+    args = "ruby -I /home/luwei/bam-991/lib /home/luwei/bam-991/bin/bam --process_mark "+ file + " -o " + file2
     restime2 = runcommand(args, workdir=workdir)
     return restime, restime2
 

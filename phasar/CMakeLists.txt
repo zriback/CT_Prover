@@ -104,10 +104,10 @@ configure_file(config.h.in config.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 include_directories(
-        /home/luwei/newifds/SVF/svf/include
-        /home/luwei/newifds/SVF/svf-llvm/include
-        /home/luwei/newifds/SVF/Release-build/include
-        /home/luwei/newifds/SVF/z3.obj/include)
+	/home/user/SVF/svf/include
+        /home/user/SVF/svf-llvm/include
+        /home/user/SVF/Release-build/include
+        /home/user/SVF/z3.obj/include)
 
 include_directories(
   ${PHASAR_SRC_DIR}/include
@@ -166,7 +166,8 @@ include_directories(external/json-schema-validator/src/)
 # now we finally add the subdirectory
 set(JSON_BuildTests OFF)
 set(JSON_Install ON)
-add_subdirectory(external/json)
+# I commented this out
+# add_subdirectory(external/json)
 
 # Googletest
 if (NOT PHASAR_IN_TREE)
