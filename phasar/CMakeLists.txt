@@ -103,11 +103,22 @@ endif()
 configure_file(config.h.in config.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+#include_directories(
+#        /home/luwei/newifds/SVF/svf/include
+#        /home/luwei/newifds/SVF/svf-llvm/include
+#        /home/luwei/newifds/SVF/Release-build/include
+#        /home/luwei/newifds/SVF/z3.obj/include)
+
+set(CTPROVER_ROOT $ENV{CTPROVER_ROOT})
+if(NOT CTPROVER_ROOT)
+  set(CTPROVER_ROOT "/home/user/CT_Prover")
+endif()
+
 include_directories(
-        /home/luwei/newifds/SVF/svf/include
-        /home/luwei/newifds/SVF/svf-llvm/include
-        /home/luwei/newifds/SVF/Release-build/include
-        /home/luwei/newifds/SVF/z3.obj/include)
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/svf/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/svf-llvm/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/Release-build/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/z3.obj/include)
 
 include_directories(
   ${PHASAR_SRC_DIR}/include
@@ -150,13 +161,17 @@ set(CMAKE_CXX_CLANG_TIDY "")
 set(BUILD_TESTS OFF CACHE BOOL "Build json-schema-validator-tests")
 
 # Make nlohmann_json_schema_validator happy by telling it how to find the single include of nlohmann_json
-include_directories(external/json/single_include/)
+if (EXISTS "${PHASAR_SRC_DIR}/external/json/single_include")
+  include_directories(external/json/single_include/)
+endif()
 
 if (PHASAR_IN_TREE)
   set_property(GLOBAL APPEND PROPERTY LLVM_EXPORTS nlohmann_json_schema_validator)
 endif()
 
-set(nlohmann_json_DIR ${PHASAR_SRC_DIR}/external/json/single_include/)
+if (EXISTS "${PHASAR_SRC_DIR}/external/json/single_include")
+  set(nlohmann_json_DIR ${PHASAR_SRC_DIR}/external/json/single_include/)
+endif()
 
 # Json Schema Validator
 set(JSON_VALIDATOR_INSTALL ON)
@@ -166,7 +181,15 @@ include_directories(external/json-schema-validator/src/)
 # now we finally add the subdirectory
 set(JSON_BuildTests OFF)
 set(JSON_Install ON)
-add_subdirectory(external/json)
+if (TARGET nlohmann_json)
+  message(STATUS "Using pre-existing nlohmann_json target")
+else()
+  if (EXISTS "${PHASAR_SRC_DIR}/external/json/CMakeLists.txt")
+    add_subdirectory(external/json)
+  else()
+    message(STATUS "external/json not present, relying on CMake-provided nlohmann_json target")
+  endif()
+endif()
 
 # Googletest
 if (NOT PHASAR_IN_TREE)
