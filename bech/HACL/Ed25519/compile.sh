@@ -1,4 +1,5 @@
 #!/bin/bash
+CTPROVER_ROOT="${CTPROVER_ROOT:-/home/user/CT_Prover}"
 
 #因为不是makefile，先删除可能干扰的ir文件
 rm -rf *.bc
@@ -16,7 +17,7 @@ clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY
 done
 
 #生成wrapper文件
-clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics $headfile_path -I/home/luwei/smack/share/smack/include $source
+clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics $headfile_path -I"$CTPROVER_ROOT"/smack/share/smack/include $source
 
 #链接
 if [ ${#deps[@]} -ne 0 ]; then
@@ -76,7 +77,6 @@ headfile_path="-I ../hacl-star/dist/gcc-compatible -I ../hacl-star/dist/karamel/
 otherflg=""
 
 build deps, source, headfile_path, otherflg
-
 
 
 
