@@ -1,11 +1,20 @@
 #! /usr/bin/python3
 import sys
 import re
-# arg1和arg2 两次bool分析的txt文件。arg3 是.shadow.bpl文件
-arg1 = sys.argv[1]
-arg2 = sys.argv[2]
-arg3 = sys.argv[3]
-arg4 = sys.argv[4]
+# Hopefully this method of recieivng arguments owrks better
+argv = sys.argv[1:]
+
+if len(argv) < 2:
+    raise SystemExit("Usage: transBoolToShadow.py <bool.txt> [<bool2.txt> ...] <shadow.bpl> [<output.bpl>]")
+
+if len(argv) == 2:
+    bool_records = [argv[0]]
+    arg3 = argv[1]
+    arg4 = argv[1]
+else:
+    bool_records = argv[:-2]
+    arg3 = argv[-2]
+    arg4 = argv[-1]
 
 
 # try:
@@ -18,34 +27,24 @@ arg4 = sys.argv[4]
 # 将两次分析结果不成立的地方读取出来
 def processOutPut():
     poss = []
-    file_object = open(arg1, 'r')
-    try:
-        lines = file_object.readlines()
-    finally:
-        file_object.close()
     errs = r'.*Error:.*might not'
     posr = r'bpl\(.*,'
-    for line in lines:
-        if re.match(errs, line):
-            tar = re.search(posr, line).group()
-            pos = re.sub(r'\D',"",tar)
-            poss.append(int(pos))
 
-    file_object = open(arg2, 'r')
-    try:
-        lines = file_object.readlines()
-    finally:
-        file_object.close()
-    errs = r'.*Error:.*might not'
-    posr = r'bpl\(.*,'
-    for line in lines:
-        if re.match(errs, line):
-            tar = re.search(posr, line).group()
-            pos = re.sub(r'\D',"",tar)
-            poss.append(int(pos))
+    for record in bool_records:
+        file_object = open(record, 'r')
+        try:
+            lines = file_object.readlines()
+        finally:
+            file_object.close()
+
+        for line in lines:
+            if re.match(errs, line):
+                tar = re.search(posr, line).group()
+                pos = re.sub(r'\D',"",tar)
+                poss.append(int(pos))
 
     poss = set(poss)
-    
+
     return poss
 
 

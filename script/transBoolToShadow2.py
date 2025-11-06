@@ -3,12 +3,13 @@
 ## 输入两个record，一个-shadow.bpl
 import sys
 import re
-arg1 = sys.argv[1]
-arg2 = arg1[:-8] +"-shadow.bpl"
-arg3 = arg1[:-8] +"-shadow-Noloop.bpl"
 
-file_object = open(arg1, 'r')
-fbj2 = open(arg2, 'r')
+if len(sys.argv) < 4:
+    raise SystemExit("Usage: transBoolToShadow2.py <record1> <record2> <boogie-file>")
+
+record1 = sys.argv[1]
+record2 = sys.argv[2]
+boogie_file = sys.argv[3]
 # try:
 #     lines = file_object.readlines()
 #     for line in lines:
@@ -19,38 +20,25 @@ fbj2 = open(arg2, 'r')
 
 def processOutPut():
     poss = []
-    file_object = open(arg1, 'r')
-    try:
-        lines = file_object.readlines()
-    finally:
-        file_object.close()
     errs = r'.*Error:.*might not'
     posr = r'bpl\(.*,'
-    for line in lines:
-        if re.match(errs, line):
-            tar = re.search(posr, line).group()
-            pos = re.sub(r'\D',"",tar)
-            poss.append(int(pos)-1)
 
-    file_object = open(arg2, 'r')
-    try:
-        lines = file_object.readlines()
-    finally:
-        file_object.close()
-    errs = r'.*Error:.*might not'
-    posr = r'bpl\(.*,'
-    for line in lines:
-        if re.match(errs, line):
-            tar = re.search(posr, line).group()
-            pos = re.sub(r'\D',"",tar)
-            poss.append(int(pos)-1)
-    
+    for record in (record1, record2):
+        with open(record, 'r') as file_object:
+            lines = file_object.readlines()
+
+        for line in lines:
+            if re.match(errs, line):
+                tar = re.search(posr, line).group()
+                pos = re.sub(r'\D',"",tar)
+                poss.append(int(pos)-1)
+
     return poss
 
 
 def doMark(poss):
     ls = []
-    file_object = open(arg3, 'r')
+    file_object = open(boogie_file, 'r')
     try:
         lines = file_object.readlines()
         # print(type(lines)) 
@@ -96,7 +84,7 @@ def doMark(poss):
     #         if idx not in poss:
     #             lines.insert(idx, mark)  
 
-    with open(arg3, 'w') as f:
+    with open(boogie_file, 'w') as f:
         for line in ls:
             # print(line + "\n")
             f.write(line)
