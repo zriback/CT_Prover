@@ -17,8 +17,8 @@ errorlimit = "5"
 UNROLL = "1"
 LOOPLIMIT = "1"
 
-PHASAR  ="/home/luwei/phasar/build/tools/phasar-llvm/phasar-llvm"
-BAMPATH = "/home/luwei/bam-"
+PHASAR  ="/home/user/CT_Prover/phasar/build/tools/phasar-llvm/phasar-llvm"
+BAMPATH = "/home/user/CT_Prover/bam/bam-"
 
 # 获取父目录名字 以及所在lib的名字
 Source = os.path.basename(os.getcwd())
@@ -195,7 +195,7 @@ def mkdir(abdir):
 #旧版的add key是为了不准确的指针分析做的，新版的是为了SVF的ir统一做的preprocess
 #其实不需要两个参数，只要一个就够了。
 def addkey(irfile, irkfile, dir):
-    args = "/home/luwei/newifds/SVF-example/bin/svf-ex "+irfile
+    args = "/home/user/CT_Prover/Extern_PTA/SVF-example/bin/svf-ex "+irfile
     restime = runcommand(args, workdir=dir)
     return restime
 
@@ -248,7 +248,7 @@ def transfer(record,file,file2, recordfile = subprocess.PIPE, workdir = os.getcw
     # 需要配合bam991 一起使用
     args = "transBoolToShadow.py "+record+" "+file
     restime = runcommand(args, recordfile, workdir = workdir)
-    args = "ruby -I /home/luwei/bam-991/lib /home/luwei/bam-991/bin/bam --process_mark "+ file + " -o " + file2
+    args = "ruby -I /home/user/CT_Prover/bam/bam-991/lib /home/user/CT_Prover/bam/bam-991/bin/bam --process_mark "+ file + " -o " + file2
     restime2 = runcommand(args, workdir=workdir)
     return restime, restime2
 
@@ -295,7 +295,7 @@ def one_and_three():
         if not islowtaintpass:
             #首先加上restime4和restime4 
             totaltime = totaltime + restime3 + restime4
-            new_path = "/home/luwei/script/vfct_analysis"
+            new_path = "/home/user/CT_Prover/script/vfct_analysis"
             sys.path.append(new_path)
             import findbuginboogie_shadow
             analres = findbuginboogie_shadow.findbuginboogie(item, "one_and_three","shadow")
@@ -338,7 +338,7 @@ def chaifen_single_three():
 
         
         # shadowress.append(res)
-        new_path = "/home/luwei/script/vfct_analysis"
+        new_path = "/home/user/CT_Prover/script/vfct_analysis"
         sys.path.append(new_path)
         import findbuginboogie_shadow
         analres = findbuginboogie_shadow.findbuginboogie(item,"chaifen_single_three","shadow")
@@ -393,7 +393,7 @@ def one_and_two_and_three():
         if not islowtaintpass:
             #首先加上restime4和restime4 
             totaltime = totaltime + restime3 + restime4 + t6
-            new_path = "/home/luwei/script/vfct_analysis"
+            new_path = "/home/user/CT_Prover/script/vfct_analysis"
             sys.path.append(new_path)
             import findbuginboogie
             analres = findbuginboogie.findbuginboogie(item)
