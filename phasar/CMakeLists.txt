@@ -103,11 +103,17 @@ endif()
 configure_file(config.h.in config.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+#include_directories(
+#        /home/luwei/newifds/SVF/svf/include
+#        /home/luwei/newifds/SVF/svf-llvm/include
+#        /home/luwei/newifds/SVF/Release-build/include
+#        /home/luwei/newifds/SVF/z3.obj/include)
+
 include_directories(
-        /home/luwei/newifds/SVF/svf/include
-        /home/luwei/newifds/SVF/svf-llvm/include
-        /home/luwei/newifds/SVF/Release-build/include
-        /home/luwei/newifds/SVF/z3.obj/include)
+	/home/user/CT_Prover/Extern_PTA/SVF/svf/include
+	/home/user/CT_Prover/Extern_PTA/SVF/svf-llvm/include
+	/home/user/CT_Prover/Extern_PTA/SVF/Release-build/include
+	/home/user/CT_Prover/Extern_PTA/SVF/z3.obj/include)
 
 include_directories(
   ${PHASAR_SRC_DIR}/include
