@@ -18,7 +18,8 @@ public:
 
   }
   ExternPTA(const Module* md){
-    char* argv[] = { "dvf", "-cxt", "fake.ll" };
+    // c++11 was complaining about this not being const for some reason
+    const char* argv[] = { "dvf", "-cxt", "fake.ll" };
     int argc = sizeof(argv) / sizeof(argv[0]);
     //    OptionBase::parseOptions(
     //        argc, argv, "Demand-Driven Points-to Analysis", "[options] <input-bitcode...>"

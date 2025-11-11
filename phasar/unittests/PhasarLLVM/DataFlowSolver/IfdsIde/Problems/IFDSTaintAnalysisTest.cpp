@@ -74,8 +74,9 @@ protected:
     for (const auto &Leak : TaintProblem->Leaks) {
       int SinkId = stoi(getMetaDataID(Leak.first));
       set<string> LeakedValueIds;
-      for (const auto *LV : Leak.second) {
-        LeakedValueIds.insert(getMetaDataID(LV));
+      //for (const auto *LV : Leak.second) {
+      for (const auto &LV : Leak.second) {
+        LeakedValueIds.insert(getMetaDataID(LV.value));
       }
       FoundLeaks.insert(make_pair(SinkId, LeakedValueIds));
     }
