@@ -17,8 +17,8 @@ clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -fcolor-
 done
 
 #生成wrapper文件
-clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -fcolor-diagnostics $headfile_path -I/home/luwei/smack/share/smack/include $source
-# clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics $headfile_path -I/home/luwei/smack/share/smack/include $source
+clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -fcolor-diagnostics $headfile_path -I/home/user/CT_Prover/smack/share/smack/include $source
+# clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics $headfile_path -I/home/user/CT_Prover/smack/share/smack/include $source
 
 #链接
 if [ ${#deps[@]} -ne 0 ]; then
