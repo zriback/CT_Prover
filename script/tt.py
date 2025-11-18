@@ -35,8 +35,8 @@ import pandas as pd
 
 # portion = os.path.splitext("teass.c")
 # newfile = portion[0] + "-k.ll"
-# filename = os.path.basename("/home/luwei/temple/teass.c")
-# dir = os.path.dirname("/home/luwei/temple/teass.c")
+# filename = os.path.basename("/home/user/CT_Prover/temple/teass.c")
+# dir = os.path.dirname("/home/user/CT_Prover/temple/teass.c")
 # print(newfile)
 # print(filename)
 # print(dir)
@@ -62,7 +62,7 @@ import pandas as pd
 
 # header = ['example','entry-point','1','2','3','1+2','1+3','2+3','1+2+3']
 
-# with open('/home/luwei/2.csv','w',newline='') as f:
+# with open('/home/user/CT_Prover/2.csv','w',newline='') as f:
 #     writer = csv.writer(f)
 #     writer.writerow(header)
 
@@ -238,7 +238,7 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
 
 
 
-# runcommand(command="tt", workdir="/home/luwei/test")
+# runcommand(command="tt", workdir="/home/user/CT_Prover/test")
 
 # # subprocess.run(["/bin/bash -c ls"], shell=True)
 

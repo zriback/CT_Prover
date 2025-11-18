@@ -18,7 +18,7 @@ UNROLL = "1"
 LOOPLIMIT = "1"
 
 PHASAR  ="/home/user/CT_Prover/phasar/build/tools/phasar-llvm/phasar-llvm"
-BAMPATH = "/home/user/CT_Prover/bam/bam-"
+BAMPATH = "//home/user/CT_Prover/bam/bam-"
 
 # 获取父目录名字 以及所在lib的名字
 Source = os.path.basename(os.getcwd())
@@ -109,18 +109,6 @@ def preprocess():
     runcommand("rm -rf one_and_two_and_three-s")
     runcommand("rm -rf two_and_three")
     runcommand("rm -f totaltime2.csv")
-    runcommand("rm -rf chaifen_single_three_0")
-    runcommand("rm -rf one_and_three")
-    runcommand("rm -rf one_and_two")
-    runcommand("rm -rf one_and_two_s")
-    runcommand("rm -rf single_one")
-    runcommand("rm -rf single_two")
-    runcommand("rm -rf single_three")
-    runcommand("rm -rf chaifen_single_two")
-    runcommand("rm -rf one_and_two_and_three_1")
-    runcommand("rm -rf single_one")
-    runcommand("rm -rf one_and_two_and_three-0")
-    
     
 
 # 允许客制化config
@@ -212,6 +200,7 @@ def get_high_taint_res(file):
     record = []
     with open(file, 'r') as f:
         lines = f.readlines()
+        print("read lines from file and got\n", lines)
         record.append(lines[1][:-1])  
         record.append(lines[3][:-1])   
     return record
@@ -298,11 +287,13 @@ def specialverifybpl(file, resfile, workdir):
     return restime
 
 #record 是bool版验证的结果， file是shadow product的结果。 file2是最后生成的文件
-def transfer(record,file,file2, recordfile = subprocess.PIPE, workdir = os.getcwd()):
+def transfer(record1,record2,file,file2, recordfile = subprocess.PIPE, workdir = os.getcwd()):
     # 需要配合bam991 一起使用
-    args = "transBoolToShadow.py "+record+" "+file
+    #args = "transBoolToShadow.py "+record+" "+file
+    args = "transBoolToShadow.py "+record1+" "+record2+" "+file+" "+file2
+    print("args is", args)
     restime = runcommand(args, recordfile, workdir = workdir)
-    args = "ruby -I /home/user/CT_Prover/bam/bam-991/lib /home/user/CT_Prover/bam/bam-991/bin/bam --process_mark "+ file + " -o " + file2
+    args = "ruby -I //home/user/CT_Prover/bam/bam-991/lib //home/user/CT_Prover/bam/bam-991/bin/bam --process_mark "+ file + " -o " + file2
     restime2 = runcommand(args, workdir=workdir)
     return restime, restime2
 
@@ -699,13 +690,10 @@ def one_and_three_s():
         l5.append(restime5)
         total.append(restime1+ restime2 + restime3 + restime4 + restime5)
 
-
-        total2.append(restime1+ restime2 + restime3 + restime4 + restime5)
-
-        # if Is_taint_pass[i] == "Verified!":
-        #     total2.append(restime1+restime2)
-        # else:
-        #     total2.append(restime1+ restime2 + restime3 + restime4 + restime5)
+        if Is_taint_pass[i] == "Verified!":
+            total2.append(restime1+restime2)
+        else:
+            total2.append(restime1+ restime2 + restime3 + restime4 + restime5)
         
         i = i + 1
 
@@ -832,9 +820,12 @@ def one_and_two_and_three():
 
         
         t6 = productbpl(boogiefile, tmpboogiefile, AcceptTaint, ShadowProduct, NoSplitAssert, "one_and_two_and_three")
-        t7, t8 = transfer(analyres, tmpboogiefile, shadowboogiefile, trasnsres, "one_and_two_and_three")
+        #t7, t8 = transfer(analyres, tmpboogiefile, shadowboogiefile, trasnsres, "one_and_two_and_three")
+        prev_bool_res = os.path.join("..", "one_and_two", analyres)
+        t7, t8 = transfer(analyres, prev_bool_res, tmpboogiefile, shadowboogiefile, trasnsres, "one_and_two_and_three")
         t9 = verifybpl(shadowboogiefile, finalres, "one_and_two_and_three")
-
+        
+        print("here. trasnsres is", trasnsres)
         high_taint_res_1_2_3.append(get_high_taint_res("one_and_two_and_three/"+trasnsres)[1])    
 
         l1.append(restime1)
@@ -1036,24 +1027,24 @@ def runall():
     iterdir(os.getcwd())
     buildbech()
 
-    # one_and_two()
-    # single_two()
+    one_and_two()
+    single_two()
 
     threads = []
-    # t1 = threading.Thread(target=single_one)
-    # threads.append(t1)
+    t1 = threading.Thread(target=single_one)
+    threads.append(t1)
     # t2 = threading.Thread(target=single_two)
     # threads.append(t2)
-    # t3 = threading.Thread(target=chaifen_single_two)
-    # threads.append(t3)
-    # t4 = threading.Thread(target=single_three)
-    # threads.append(t4)
-    # t5 = threading.Thread(target=chaifen_single_three)
-    # threads.append(t5)
+    t3 = threading.Thread(target=chaifen_single_two)
+    threads.append(t3)
+    t4 = threading.Thread(target=single_three)
+    threads.append(t4)
+    t5 = threading.Thread(target=chaifen_single_three)
+    threads.append(t5)
     t6 = threading.Thread(target=one_and_two_s)
     threads.append(t6)
-    # t7 = threading.Thread(target=one_and_three)
-    # threads.append(t7)
+    t7 = threading.Thread(target=one_and_three)
+    threads.append(t7)
 
     t7_s = threading.Thread(target=one_and_three_s)
     threads.append(t7_s)
@@ -1061,8 +1052,8 @@ def runall():
 	# 不再需要这三个方法了，因为无法传递sound信息的问题。这部分代码是可以运行的，但是暂时放弃
     # t8 = threading.Thread(target=two_and_three)
     # threads.append(t8)
-    # t9 = threading.Thread(target=one_and_two_and_three)
-    # threads.append(t9)
+    t9 = threading.Thread(target=one_and_two_and_three)
+    threads.append(t9)
 
     # t10 = threading.Thread(target=one_and_two_and_three_s)
     # threads.append(t10)
