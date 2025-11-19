@@ -1,0 +1,13 @@
+{
+    "name": "bad_function demo",
+    "version": 1.0,
+    "functions": [
+        {
+            "file": "bad.c",
+            "name": "bad_wrapper",
+            "params": {
+                "source": [0]
+            }
+        }
+    ]
+}
