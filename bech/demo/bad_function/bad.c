@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "../../ct-verif.h"
 
-extern void vfct_taintseed(const void *secret_value);
+extern void vfct_taintseed(int secret_value);
 const int32_t getint32(void);
 
 static int bad_function(int a, int b) {
@@ -12,11 +12,10 @@ static int bad_function(int a, int b) {
 }
 
 void bad_wrapper(int a, int b) {
-    vfct_taintseed(&a);
+    vfct_taintseed(a);
     public_in(__SMACK_value(b));
 
-    int sum = bad_function(a, b);
-    public_out(__SMACK_value(sum));
+    (void)bad_function(a, b);
 }
 
 void bad_wrapper_t(void) {
