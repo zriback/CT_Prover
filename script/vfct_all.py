@@ -72,6 +72,8 @@ verifytime_1_3 = []
 detailtime_1_3_s = []
 totaltime_1_3_s = []
 verifytime_1_3_s = []
+
+detailtime_1_2_3 = []
 #####################
 
 totaltime_1_2_3 = []
@@ -1059,7 +1061,7 @@ def runall():
     +totaltime_1_3+totaltime_1_3_s+totaltime_1_2_3
     
     detailtime = detailtime_1+detailtime_2+detailtime_2_s+detailtime_3+detailtime_3_s+detailtime_1_2+detailtime_1_2_s+ detailtime_1_3+\
-        detailtime_1_3_s
+        detailtime_1_3_s + detailtime_1_2_3
 
     verifytime = verifytime_1+verifytime_2+verifytime_2_s+verifytime_3+verifytime_3_s+verifytime_1_2+verifytime_1_2_s+\
         verifytime_1_3+verifytime_1_3_s
