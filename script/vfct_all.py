@@ -252,6 +252,37 @@ def gather_tainted_locations(taintres_path, ll_path):
 
 
 def locate_source_file(source_name, workdir, candidates):
+    def find_wrappers():
+        wrappers = []
+        base_dir = os.path.abspath(workdir)
+        parent_dir = os.path.dirname(base_dir)
+        for root_dir in [base_dir, parent_dir]:
+            candidate = os.path.join(root_dir, f"{source_name}.c")
+            if os.path.isfile(candidate):
+                wrappers.append(candidate)
+        return wrappers
+
+    def included_sources(wrapper_paths):
+        include_re = re.compile(r"^\s*#\s*include\s+\"([^\"]+)\"")
+        seen = set()
+        for wrapper_path in wrapper_paths:
+            try:
+                with open(wrapper_path, "r") as f:
+                    for line in f:
+                        match = include_re.match(line)
+                        if match:
+                            inc = match.group(1)
+                            if inc.endswith(".c"):
+                                resolved = os.path.normpath(os.path.join(os.path.dirname(wrapper_path), inc))
+                                seen.add(resolved)
+                                seen.add(os.path.basename(inc))
+            except (OSError, UnicodeDecodeError):
+                continue
+        return seen
+
+    wrapper_paths = find_wrappers()
+    include_hints = included_sources(wrapper_paths)
+
     for candidate in candidates:
         if os.path.isfile(candidate):
             return candidate
@@ -262,6 +293,35 @@ def locate_source_file(source_name, workdir, candidates):
         candidate = os.path.join(root_dir, f"{source_name}.c")
         if os.path.isfile(candidate):
             return candidate
+
+    basenames = {os.path.basename(path) for path in candidates}
+    basenames.add(f"{source_name}.c")
+    basenames.update({os.path.basename(path) for path in include_hints})
+
+    search_roots = [base_dir, parent_dir]
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
+        ).strip()
+        if repo_root not in search_roots:
+            search_roots.append(repo_root)
+    except subprocess.CalledProcessError:
+        repo_root = None
+
+    for root_dir in search_roots:
+        for current_root, _, files in os.walk(root_dir):
+            for filename in files:
+                if filename in basenames:
+                    return os.path.join(current_root, filename)
+
+        for hint in include_hints:
+            if os.path.isabs(hint) and os.path.isfile(hint):
+                return hint
+            if os.path.sep in hint:
+                potential = os.path.normpath(os.path.join(root_dir, hint))
+                if os.path.isfile(potential):
+                    return potential
+
     return None
 
 
@@ -281,14 +341,19 @@ def mark_tainted_source(source_name, workdir, taintres, llfile):
         return
 
     tainted_lines = set()
+    target_basename = os.path.basename(target_file)
     for path, lines in locations_by_file.items():
-        if not os.path.isfile(path):
-            continue
-        try:
-            if os.path.samefile(path, target_file):
-                tainted_lines.update(lines)
-        except FileNotFoundError:
-            continue
+        matches_target = False
+        if os.path.isfile(path):
+            try:
+                matches_target = os.path.samefile(path, target_file)
+            except FileNotFoundError:
+                matches_target = False
+        if not matches_target and os.path.basename(path) == target_basename:
+            matches_target = True
+
+        if matches_target:
+            tainted_lines.update(lines)
 
     if not tainted_lines:
         return
