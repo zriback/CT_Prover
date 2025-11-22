@@ -249,6 +249,9 @@ def locate_source_file(source_name, workdir, candidates):
                 if os.path.isfile(potential):
                     return potential
 
+    if wrapper_paths:
+        return wrapper_paths[0]
+
     return None
 
 
