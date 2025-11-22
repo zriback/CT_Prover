@@ -162,9 +162,124 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
+def locate_source_file(source_name, workdir, candidates):
+    base_dir = os.path.abspath(workdir)
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        repo_root = None
+    parent_dir = os.path.dirname(base_dir)
+
+    def resolve_path(path):
+        if os.path.isabs(path):
+            return path
+        return os.path.abspath(os.path.join(workdir, path))
+
+    def existing_path(path):
+        candidate = resolve_path(path)
+        if os.path.isfile(candidate):
+            return candidate
+        return None
+
+    def find_wrappers():
+        wrappers = []
+        seen = set()
+
+        def collect(dir_path):
+            if not os.path.isdir(dir_path):
+                return
+            for entry in os.listdir(dir_path):
+                if entry.endswith(".c"):
+                    full = os.path.join(dir_path, entry)
+                    if full not in seen:
+                        wrappers.append(full)
+                        seen.add(full)
+
+        current = base_dir
+        stop_dir = repo_root if repo_root else os.path.abspath(os.sep)
+        while True:
+            collect(current)
+            if current == stop_dir:
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+
+        return wrappers
+
+    def included_sources(wrapper_paths):
+        include_re = re.compile(r"^\s*#\s*include\s+\"([^\"]+)\"")
+        seen = set()
+        for wrapper_path in wrapper_paths:
+            try:
+                with open(wrapper_path, "r") as f:
+                    for line in f:
+                        match = include_re.match(line)
+                        if match:
+                            inc = match.group(1)
+                            if inc.endswith(".c"):
+                                resolved = os.path.normpath(os.path.join(os.path.dirname(wrapper_path), inc))
+                                seen.add(resolved)
+                                seen.add(os.path.basename(inc))
+            except (OSError, UnicodeDecodeError):
+                continue
+        return seen
+
+    wrapper_paths = find_wrappers()
+    include_hints = included_sources(wrapper_paths)
+
+    for hint in include_hints:
+        resolved = existing_path(hint)
+        if resolved:
+            return resolved
+
+    for candidate in candidates:
+        resolved = existing_path(candidate)
+        if resolved:
+            return resolved
+
+    for root_dir in [base_dir, parent_dir]:
+        candidate = os.path.join(root_dir, f"{source_name}.c")
+        resolved = existing_path(candidate)
+        if resolved:
+            return resolved
+
+    basenames = {os.path.basename(path) for path in candidates}
+    basenames.add(f"{source_name}.c")
+    basenames.update({os.path.basename(path) for path in include_hints})
+    basenames.update({os.path.basename(path) for path in wrapper_paths})
+
+    search_roots = [base_dir, parent_dir]
+    if repo_root and repo_root not in search_roots:
+        search_roots.append(repo_root)
+
+    for root_dir in search_roots:
+        for current_root, _, files in os.walk(root_dir):
+            for filename in files:
+                if filename in basenames:
+                    resolved = existing_path(os.path.join(current_root, filename))
+                    if resolved:
+                        return resolved
+
+        for hint in include_hints:
+            if os.path.sep in hint:
+                potential = os.path.normpath(os.path.join(root_dir, hint))
+                resolved = existing_path(potential)
+                if resolved:
+                    return resolved
+
+    if wrapper_paths:
+        return resolve_path(wrapper_paths[0])
+
+    return None
+
+
 def annotate_source(source_name, workdir, taintres, llfile):
-    taintres_path = os.path.join(workdir, taintres)
-    ll_path = os.path.join(workdir, llfile)
+    taintres_path = os.path.abspath(os.path.join(workdir, taintres))
+    ll_path = os.path.abspath(os.path.join(workdir, llfile))
 
     candidates = [
         source_name,
@@ -175,14 +290,25 @@ def annotate_source(source_name, workdir, taintres, llfile):
         os.path.join(workdir, f"{source_name}.c"),
     ]
 
-    source_path = next((path for path in candidates if os.path.isfile(path)), None)
+    source_path = locate_source_file(source_name, workdir, candidates)
     if not source_path:
         return
 
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    annotate_cmd = f"annotate.py {taintres} {llfile} {source_path}"
+    base_name = os.path.basename(source_path)
+    stem, ext = os.path.splitext(base_name)
+    output_name = f"{stem}_marked{ext or '.c'}"
+    output_path = os.path.abspath(os.path.join(workdir, output_name))
+
+    annotate_cmd = "{exe} {taint} {ll} {src} {dst}".format(
+        exe=shlex.quote("annotate.py"),
+        taint=shlex.quote(taintres_path),
+        ll=shlex.quote(ll_path),
+        src=shlex.quote(source_path),
+        dst=shlex.quote(output_path),
+    )
     runcommand(annotate_cmd, workdir=workdir)
 
 
