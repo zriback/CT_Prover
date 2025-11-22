@@ -300,7 +300,16 @@ def annotate_source(source_name, workdir, taintres, llfile):
 
     output_path = os.path.abspath(os.path.join(workdir, os.path.basename(source_path)))
 
-    annotate_cmd = "annotate.py {taint} {ll} {src} {dst}".format(
+    try:
+        repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True).strip()
+        annotate_exe = os.path.join(repo_root, "scripts", "annotate.py")
+        if not os.path.isfile(annotate_exe):
+            annotate_exe = "annotate.py"
+    except subprocess.CalledProcessError:
+        annotate_exe = "annotate.py"
+
+    annotate_cmd = "{exe} {taint} {ll} {src} {dst}".format(
+        exe=shlex.quote(annotate_exe),
         taint=shlex.quote(taintres),
         ll=shlex.quote(llfile),
         src=shlex.quote(source_path),
