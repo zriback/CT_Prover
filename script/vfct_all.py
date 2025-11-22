@@ -163,94 +163,6 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
-def extract_attr(attrs, key):
-    pattern = re.compile(r"%s:\s*\"([^\"]*)\"" % key)
-    match = pattern.search(attrs)
-    if match:
-        return match.group(1)
-    return None
-
-
-def extract_numeric_attr(attrs, key):
-    pattern = re.compile(r"%s:\s*!([0-9]+)" % key)
-    match = pattern.search(attrs)
-    if match:
-        return match.group(1)
-    return None
-
-
-def parse_debug_locations(ll_path):
-    with open(ll_path, "r") as f:
-        lines = f.readlines()
-
-    file_map = {}
-    scope_file_map = {}
-    location_map = {}
-
-    file_re = re.compile(r"!([0-9]+)\s*=\s*!DIFile\(([^)]*)\)")
-    scope_re = re.compile(r"!([0-9]+)\s*=\s*!DI\w+\(([^)]*file:\s*!\d+[^)]*)\)")
-    location_re = re.compile(r"!([0-9]+)\s*=\s*!DILocation\(([^)]*)\)")
-
-    for line in lines:
-        line = line.strip()
-        file_match = file_re.match(line)
-        if file_match:
-            file_id = file_match.group(1)
-            attrs = file_match.group(2)
-            filename = extract_attr(attrs, "filename")
-            directory = extract_attr(attrs, "directory")
-            if filename:
-                if directory:
-                    file_map[file_id] = os.path.join(directory, filename)
-                else:
-                    file_map[file_id] = filename
-            continue
-
-        scope_match = scope_re.match(line)
-        if scope_match:
-            scope_id = scope_match.group(1)
-            attrs = scope_match.group(2)
-            file_id = extract_numeric_attr(attrs, "file")
-            if file_id:
-                scope_file_map[scope_id] = file_id
-            continue
-
-        loc_match = location_re.match(line)
-        if loc_match:
-            loc_id = loc_match.group(1)
-            attrs = loc_match.group(2)
-            line_no = extract_numeric_attr(attrs, "line")
-            file_id = extract_numeric_attr(attrs, "file")
-            scope_id = extract_numeric_attr(attrs, "scope")
-            ref_file_id = file_id or (scope_file_map.get(scope_id))
-            if line_no and ref_file_id and ref_file_id in file_map:
-                location_map[loc_id] = (file_map[ref_file_id], int(line_no))
-
-    return location_map
-
-
-def gather_tainted_locations(taintres_path, ll_path):
-    tainted_ids = set()
-    with open(taintres_path, "r") as f:
-        for line in f:
-            if "!Tainted" in line:
-                match = re.search(r"!dbg\s*!([0-9]+)", line)
-                if match:
-                    tainted_ids.add(match.group(1))
-
-    if not tainted_ids:
-        return {}
-
-    location_map = parse_debug_locations(ll_path)
-    locations_by_file = {}
-    for loc_id in tainted_ids:
-        if loc_id in location_map:
-            file_path, line_no = location_map[loc_id]
-            locations_by_file.setdefault(file_path, set()).add(line_no)
-
-    return locations_by_file
-
-
 def locate_source_file(source_name, workdir, candidates):
     def find_wrappers():
         wrappers = []
@@ -325,46 +237,29 @@ def locate_source_file(source_name, workdir, candidates):
     return None
 
 
-def mark_tainted_source(source_name, workdir, taintres, llfile):
+def annotate_source(source_name, workdir, taintres, llfile):
     taintres_path = os.path.join(workdir, taintres)
     ll_path = os.path.join(workdir, llfile)
+
+    candidates = [
+        source_name,
+        f"{source_name}.c",
+        os.path.join(os.getcwd(), source_name),
+        os.path.join(os.getcwd(), f"{source_name}.c"),
+        os.path.join(workdir, source_name),
+        os.path.join(workdir, f"{source_name}.c"),
+    ]
+
+    source_path = locate_source_file(source_name, workdir, candidates)
+    if not source_path:
+        return
 
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    locations_by_file = gather_tainted_locations(taintres_path, ll_path)
-    if not locations_by_file:
-        return
+    annotate_cmd = f"annotate.py {taintres} {llfile} {source_path}"
+    runcommand(annotate_cmd, workdir=workdir)
 
-    target_file = locate_source_file(source_name, workdir, locations_by_file.keys())
-    if not target_file:
-        return
-
-    tainted_lines = set()
-    target_basename = os.path.basename(target_file)
-    for path, lines in locations_by_file.items():
-        matches_target = False
-        if os.path.isfile(path):
-            try:
-                matches_target = os.path.samefile(path, target_file)
-            except FileNotFoundError:
-                matches_target = False
-        if not matches_target and os.path.basename(path) == target_basename:
-            matches_target = True
-
-        if matches_target:
-            tainted_lines.update(lines)
-
-    if not tainted_lines:
-        return
-
-    output_path = os.path.join(workdir, f"{source_name}_marked.c")
-    with open(target_file, "r") as src, open(output_path, "w") as dst:
-        for idx, line in enumerate(src, 1):
-            line_out = line.rstrip("\n")
-            if idx in tainted_lines:
-                line_out += " // TAINTED"
-            dst.write(line_out + "\n")
 
 def iterdir(dir):
     for root,dirs,files in os.walk(dir):
@@ -459,7 +354,7 @@ def phasar(tkfile, taintentry, taintconfig, outfile, workdir = os.getcwd(), sour
     base_source = source_name
     if base_source is None:
         base_source = os.path.basename(tkfile).replace("-k.ll", "")
-    mark_tainted_source(base_source, workdir, outfile, tkfile)
+    annotate_source(base_source, workdir, outfile, tkfile)
     return result
 
 def generatebpl(file, entry, smackout, workdir):
