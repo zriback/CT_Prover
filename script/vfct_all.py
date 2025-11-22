@@ -164,6 +164,17 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
 
 
 def locate_source_file(source_name, workdir, candidates):
+    def resolve_path(path):
+        if os.path.isabs(path):
+            return path
+        return os.path.abspath(os.path.join(workdir, path))
+
+    def existing_path(path):
+        candidate = resolve_path(path)
+        if os.path.isfile(candidate):
+            return candidate
+        return None
+
     def find_wrappers():
         wrappers = []
         base_dir = os.path.abspath(workdir)
@@ -209,19 +220,22 @@ def locate_source_file(source_name, workdir, candidates):
     include_hints = included_sources(wrapper_paths)
 
     for hint in include_hints:
-        if os.path.isabs(hint) and os.path.isfile(hint):
-            return hint
+        resolved = existing_path(hint)
+        if resolved:
+            return resolved
 
     for candidate in candidates:
-        if os.path.isfile(candidate):
-            return candidate
+        resolved = existing_path(candidate)
+        if resolved:
+            return resolved
 
     base_dir = os.path.abspath(workdir)
     parent_dir = os.path.dirname(base_dir)
     for root_dir in [base_dir, parent_dir]:
         candidate = os.path.join(root_dir, f"{source_name}.c")
-        if os.path.isfile(candidate):
-            return candidate
+        resolved = existing_path(candidate)
+        if resolved:
+            return resolved
 
     basenames = {os.path.basename(path) for path in candidates}
     basenames.add(f"{source_name}.c")
@@ -241,16 +255,19 @@ def locate_source_file(source_name, workdir, candidates):
         for current_root, _, files in os.walk(root_dir):
             for filename in files:
                 if filename in basenames:
-                    return os.path.join(current_root, filename)
+                    resolved = existing_path(os.path.join(current_root, filename))
+                    if resolved:
+                        return resolved
 
         for hint in include_hints:
             if os.path.sep in hint:
                 potential = os.path.normpath(os.path.join(root_dir, hint))
-                if os.path.isfile(potential):
-                    return potential
+                resolved = existing_path(potential)
+                if resolved:
+                    return resolved
 
     if wrapper_paths:
-        return wrapper_paths[0]
+        return resolve_path(wrapper_paths[0])
 
     return None
 
@@ -275,7 +292,9 @@ def annotate_source(source_name, workdir, taintres, llfile):
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    annotate_cmd = f"annotate.py {taintres} {llfile} {source_path}"
+    annotate_cmd = "annotate.py {taint} {ll} {src}".format(
+        taint=shlex.quote(taintres), ll=shlex.quote(llfile), src=shlex.quote(source_path)
+    )
     runcommand(annotate_cmd, workdir=workdir)
 
 
