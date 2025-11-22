@@ -168,10 +168,23 @@ def locate_source_file(source_name, workdir, candidates):
         wrappers = []
         base_dir = os.path.abspath(workdir)
         parent_dir = os.path.dirname(base_dir)
-        for root_dir in [base_dir, parent_dir]:
-            candidate = os.path.join(root_dir, f"{source_name}.c")
-            if os.path.isfile(candidate):
-                wrappers.append(candidate)
+
+        def collect(dir_path):
+            for entry in os.listdir(dir_path):
+                if entry.endswith(".c"):
+                    wrappers.append(os.path.join(dir_path, entry))
+
+        collect(base_dir)
+        collect(parent_dir)
+
+        direct_match = os.path.join(base_dir, f"{source_name}.c")
+        if direct_match not in wrappers and os.path.isfile(direct_match):
+            wrappers.append(direct_match)
+
+        parent_match = os.path.join(parent_dir, f"{source_name}.c")
+        if parent_match not in wrappers and os.path.isfile(parent_match):
+            wrappers.append(parent_match)
+
         return wrappers
 
     def included_sources(wrapper_paths):
@@ -194,6 +207,10 @@ def locate_source_file(source_name, workdir, candidates):
 
     wrapper_paths = find_wrappers()
     include_hints = included_sources(wrapper_paths)
+
+    for hint in include_hints:
+        if os.path.isabs(hint) and os.path.isfile(hint):
+            return hint
 
     for candidate in candidates:
         if os.path.isfile(candidate):
@@ -227,8 +244,6 @@ def locate_source_file(source_name, workdir, candidates):
                     return os.path.join(current_root, filename)
 
         for hint in include_hints:
-            if os.path.isabs(hint) and os.path.isfile(hint):
-                return hint
             if os.path.sep in hint:
                 potential = os.path.normpath(os.path.join(root_dir, hint))
                 if os.path.isfile(potential):
