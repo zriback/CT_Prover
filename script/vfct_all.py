@@ -6,7 +6,6 @@ import shlex
 import time
 import json
 import threading
-import re
 
 import sys
 
