@@ -279,8 +279,8 @@ def locate_source_file(source_name, workdir, candidates):
 
 
 def annotate_source(source_name, workdir, taintres, llfile):
-    taintres_path = os.path.join(workdir, taintres)
-    ll_path = os.path.join(workdir, llfile)
+    taintres_path = os.path.abspath(os.path.join(workdir, taintres))
+    ll_path = os.path.abspath(os.path.join(workdir, llfile))
 
     candidates = [
         source_name,
@@ -298,20 +298,15 @@ def annotate_source(source_name, workdir, taintres, llfile):
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    output_path = os.path.abspath(os.path.join(workdir, os.path.basename(source_path)))
-
-    try:
-        repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True).strip()
-        annotate_exe = os.path.join(repo_root, "scripts", "annotate.py")
-        if not os.path.isfile(annotate_exe):
-            annotate_exe = "annotate.py"
-    except subprocess.CalledProcessError:
-        annotate_exe = "annotate.py"
+    base_name = os.path.basename(source_path)
+    stem, ext = os.path.splitext(base_name)
+    output_name = f"{stem}_marked{ext or '.c'}"
+    output_path = os.path.abspath(os.path.join(workdir, output_name))
 
     annotate_cmd = "{exe} {taint} {ll} {src} {dst}".format(
-        exe=shlex.quote(annotate_exe),
-        taint=shlex.quote(taintres),
-        ll=shlex.quote(llfile),
+        exe=shlex.quote("annotate.py"),
+        taint=shlex.quote(taintres_path),
+        ll=shlex.quote(ll_path),
         src=shlex.quote(source_path),
         dst=shlex.quote(output_path),
     )
