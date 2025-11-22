@@ -164,6 +164,15 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
 
 
 def locate_source_file(source_name, workdir, candidates):
+    base_dir = os.path.abspath(workdir)
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        repo_root = None
+    parent_dir = os.path.dirname(base_dir)
+
     def resolve_path(path):
         if os.path.isabs(path):
             return path
@@ -177,24 +186,28 @@ def locate_source_file(source_name, workdir, candidates):
 
     def find_wrappers():
         wrappers = []
-        base_dir = os.path.abspath(workdir)
-        parent_dir = os.path.dirname(base_dir)
+        seen = set()
 
         def collect(dir_path):
+            if not os.path.isdir(dir_path):
+                return
             for entry in os.listdir(dir_path):
                 if entry.endswith(".c"):
-                    wrappers.append(os.path.join(dir_path, entry))
+                    full = os.path.join(dir_path, entry)
+                    if full not in seen:
+                        wrappers.append(full)
+                        seen.add(full)
 
-        collect(base_dir)
-        collect(parent_dir)
-
-        direct_match = os.path.join(base_dir, f"{source_name}.c")
-        if direct_match not in wrappers and os.path.isfile(direct_match):
-            wrappers.append(direct_match)
-
-        parent_match = os.path.join(parent_dir, f"{source_name}.c")
-        if parent_match not in wrappers and os.path.isfile(parent_match):
-            wrappers.append(parent_match)
+        current = base_dir
+        stop_dir = repo_root if repo_root else os.path.abspath(os.sep)
+        while True:
+            collect(current)
+            if current == stop_dir:
+                break
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
 
         return wrappers
 
@@ -229,8 +242,6 @@ def locate_source_file(source_name, workdir, candidates):
         if resolved:
             return resolved
 
-    base_dir = os.path.abspath(workdir)
-    parent_dir = os.path.dirname(base_dir)
     for root_dir in [base_dir, parent_dir]:
         candidate = os.path.join(root_dir, f"{source_name}.c")
         resolved = existing_path(candidate)
@@ -240,16 +251,11 @@ def locate_source_file(source_name, workdir, candidates):
     basenames = {os.path.basename(path) for path in candidates}
     basenames.add(f"{source_name}.c")
     basenames.update({os.path.basename(path) for path in include_hints})
+    basenames.update({os.path.basename(path) for path in wrapper_paths})
 
     search_roots = [base_dir, parent_dir]
-    try:
-        repo_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
-        ).strip()
-        if repo_root not in search_roots:
-            search_roots.append(repo_root)
-    except subprocess.CalledProcessError:
-        repo_root = None
+    if repo_root and repo_root not in search_roots:
+        search_roots.append(repo_root)
 
     for root_dir in search_roots:
         for current_root, _, files in os.walk(root_dir):
