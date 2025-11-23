@@ -103,14 +103,100 @@ def find_div_in_ir(ir_lines, dest):
     error(f"Could not find matching IR division for dest {dest}")
     return None, None
 
-def find_dilocation_line(ir_lines, dbg_id):
-    diloc_re = re.compile(r"!" + str(dbg_id) + r"\s*=\s*!DILocation\(line:\s*(\d+)")
-    for line in ir_lines:
-        m = diloc_re.search(line)
-        if m:
-            return int(m.group(1))
-    error(f"Could not find DILocation entry for !{dbg_id}")
+def parse_ir_metadata(ir_path, ll_dir):
+    difiles = {}
+    scopes = {}
+    dilocs = {}
+
+    def resolve_di_path(name, directory):
+        if os.path.isabs(name):
+            return os.path.abspath(name)
+
+        base = ll_dir
+        if directory:
+            if os.path.isabs(directory):
+                base = directory
+            else:
+                base = os.path.abspath(os.path.join(ll_dir, directory))
+
+        return os.path.abspath(os.path.join(base, name))
+
+    difile_re = re.compile(
+        r"!(\d+)\s*=\s*!DIFile\([^)]*filename:\s*\"([^\"]+)\"[^)]*directory:\s*\"([^\"]*)\"\)"
+    )
+    scope_re = re.compile(r"!(\d+)\s*=\s*(?:distinct\s+)?!DI(\w+)\(([^)]*)\)")
+    file_field_re = re.compile(r"file:\s*!([0-9]+)")
+    scope_field_re = re.compile(r"scope:\s*!([0-9]+)")
+    diloc_re = re.compile(
+        r"!(\d+)\s*=\s*!DILocation\([^)]*line:\s*(\d+)[^)]*scope:\s*!([0-9]+)(?:[^)]*inlinedAt:\s*!([0-9]+))?"
+    )
+
+    try:
+        with open(ir_path, "r", errors="ignore") as f:
+            for line in f:
+                di_match = difile_re.search(line)
+                if di_match:
+                    di_id, name, directory = di_match.groups()
+                    difiles[di_id] = resolve_di_path(name, directory)
+                    continue
+
+                loc_match = diloc_re.search(line)
+                if loc_match:
+                    loc_id, line_no, scope_id, inline_id = loc_match.groups()
+                    dilocs[loc_id] = {
+                        "line": int(line_no),
+                        "scope": scope_id,
+                        "inline": inline_id,
+                    }
+                    continue
+
+                scope_match = scope_re.search(line)
+                if scope_match:
+                    scope_id, _kind, content = scope_match.groups()
+                    file_field = file_field_re.search(content)
+                    scope_field = scope_field_re.search(content)
+                    file_id = file_field.group(1) if file_field else None
+                    parent_scope = scope_field.group(1) if scope_field else None
+                    if file_id or parent_scope:
+                        scopes[scope_id] = {
+                            "file": file_id,
+                            "parent": parent_scope,
+                        }
+    except (OSError, UnicodeDecodeError):
+        error("Failed to parse IR metadata.")
+        return {}, {}, {}
+
+    return difiles, scopes, dilocs
+
+
+def resolve_scope_file(scope_id, scopes, difiles):
+    seen = set()
+    current = scope_id
+    while current and current not in seen:
+        seen.add(current)
+        scope_info = scopes.get(current, {})
+        file_id = scope_info.get("file")
+        parent = scope_info.get("parent")
+        if file_id and file_id in difiles:
+            return difiles[file_id]
+        current = parent
     return None
+
+
+def resolve_dbg_location(dbg_id, scopes, difiles, dilocs):
+    loc = dilocs.get(dbg_id)
+    if not loc:
+        return None, None
+
+    inline = loc.get("inline")
+    if inline and inline in dilocs:
+        inline_scope = dilocs[inline].get("scope")
+        path = resolve_scope_file(inline_scope, scopes, difiles)
+        if path:
+            return path, dilocs[inline].get("line")
+
+    path = resolve_scope_file(loc.get("scope"), scopes, difiles)
+    return path, loc.get("line")
 
 def annotate_c_file(c_lines, tainted_line_types):
     output = []
@@ -123,25 +209,30 @@ def annotate_c_file(c_lines, tainted_line_types):
     return output
 
 def main():
-    if len(sys.argv) != 5:
-        error("Usage: python annotate_taint.py [taintres] [llvm IR] [c file] [out file]")
+    if len(sys.argv) < 3:
+        error("Usage: python annotate.py [taintres] [llvm IR] [output_dir (optional)]")
         sys.exit(1)
 
     taint_path = sys.argv[1]
     ir_path = sys.argv[2]
-    c_path = sys.argv[3]
-    out_file = sys.argv[4]
+    output_dir = sys.argv[3] if len(sys.argv) > 3 else None
 
     taint_lines = load_file(taint_path)
     ir_lines = load_file(ir_path)
-    c_lines = load_file(c_path)
+    ll_dir = os.path.dirname(os.path.abspath(ir_path))
+    output_base = os.path.abspath(output_dir) if output_dir else None
+
+    difiles, scopes, dilocs = parse_ir_metadata(ir_path, ll_dir)
+    if not difiles or not dilocs:
+        error("No debug metadata found; cannot resolve source files.")
+        sys.exit(1)
 
     tainted_ops = extract_tainted_instructions(taint_lines)
     if not tainted_ops:
         error("No tainted patterns extracted.")
         sys.exit(1)
 
-    tainted_c_lines = {}
+    tainted_per_file = {}
 
     for tainted in tainted_ops:
         if tainted.get("kind") == "branch":
@@ -167,32 +258,46 @@ def main():
 
         print(f"[INFO] Found IR {comment_kind} at line {ir_idx+1}, dbg !{dbg_num}")
 
-        c_line = find_dilocation_line(ir_lines, dbg_num)
-        if c_line is None:
-            error(f"Could not map dbg !{dbg_num} to C source line; skipping.")
+        src_path, c_line = resolve_dbg_location(str(dbg_num), scopes, difiles, dilocs)
+        if not src_path or not c_line:
+            error(f"Could not map dbg !{dbg_num} to C source; skipping.")
             continue
 
-        print(f"[INFO] Corresponds to C source line {c_line}")
-        tainted_c_lines.setdefault(c_line, set()).add(comment_kind)
+        if output_base:
+            src_path = os.path.abspath(src_path)
 
-    if not tainted_c_lines:
-        error("No successful taint→source mappings. No marked file will be written.")
+        print(f"[INFO] Corresponds to C source {src_path} line {c_line}")
+        file_entry = tainted_per_file.setdefault(src_path, {})
+        file_entry.setdefault(c_line, set()).add(comment_kind)
+
+    if not tainted_per_file:
+        error("No successful taint→source mappings. No marked files will be written.")
         sys.exit(1)
 
-    annotated = annotate_c_file(c_lines, tainted_c_lines)
+    for src_path, tainted_c_lines in tainted_per_file.items():
+        if not os.path.isfile(src_path):
+            error(f"Resolved source file does not exist: {src_path}")
+            continue
 
-    # ---------------------------
-    # WRITE OUTPUT FILE
-    # ---------------------------
-    try:
-        with open(out_file, "w") as f:
-            for line in annotated:
-                f.write(line + "\n")
-    except Exception as e:
-        error(f"Could not write output file '{out_file}': {e}")
-        sys.exit(1)
+        c_lines = load_file(src_path)
+        annotated = annotate_c_file(c_lines, tainted_c_lines)
 
-    print(f"[INFO] Annotated C file written to: {out_file}")
+        base_name = os.path.basename(src_path)
+        stem, ext = os.path.splitext(base_name)
+        output_name = f"{stem}_marked{ext or '.c'}"
+        dest_dir = output_base if output_base else os.path.dirname(src_path)
+        os.makedirs(dest_dir, exist_ok=True)
+        out_file = os.path.join(dest_dir, output_name)
+
+        try:
+            with open(out_file, "w") as f:
+                for line in annotated:
+                    f.write(line + "\n")
+        except Exception as e:
+            error(f"Could not write output file '{out_file}': {e}")
+            continue
+
+        print(f"[INFO] Annotated C file written to: {out_file}")
 
 if __name__ == "__main__":
     main()

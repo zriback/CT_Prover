@@ -313,36 +313,13 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None, taint_pat
 def annotate_source(source_name, workdir, taintres, llfile):
     taintres_path = os.path.abspath(os.path.join(workdir, taintres))
     ll_path = os.path.abspath(os.path.join(workdir, llfile))
-
-    candidates = [
-        source_name,
-        f"{source_name}.c",
-        os.path.join(os.getcwd(), source_name),
-        os.path.join(os.getcwd(), f"{source_name}.c"),
-        os.path.join(workdir, source_name),
-        os.path.join(workdir, f"{source_name}.c"),
-    ]
-
-    source_path = locate_source_file(
-        source_name, workdir, candidates, ll_path=ll_path, taint_path=taintres_path
-    )
-    if not source_path:
-        return
-
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    base_name = os.path.basename(source_path)
-    stem, ext = os.path.splitext(base_name)
-    output_name = f"{stem}_marked{ext or '.c'}"
-    output_path = os.path.abspath(os.path.join(workdir, output_name))
-
-    annotate_cmd = "{exe} {taint} {ll} {src} {dst}".format(
+    annotate_cmd = "{exe} {taint} {ll}".format(
         exe=shlex.quote("annotate.py"),
         taint=shlex.quote(taintres_path),
         ll=shlex.quote(ll_path),
-        src=shlex.quote(source_path),
-        dst=shlex.quote(output_path),
     )
     runcommand(annotate_cmd, workdir=workdir)
 
