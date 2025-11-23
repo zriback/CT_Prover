@@ -6,6 +6,7 @@ import shlex
 import time
 import json
 import threading
+import re
 
 import sys
 
@@ -162,7 +163,7 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
-def locate_source_file(source_name, workdir, candidates):
+def locate_source_file(source_name, workdir, candidates, ll_path=None):
     base_dir = os.path.abspath(workdir)
     try:
         repo_root = subprocess.check_output(
@@ -228,16 +229,36 @@ def locate_source_file(source_name, workdir, candidates):
                 continue
         return seen
 
+    def ll_source_hints(ir_path):
+        if not ir_path or not os.path.isfile(ir_path):
+            return set()
+        hints = set()
+        source_re = re.compile(r"source_filename\s*=\s*\"([^\"]+)\"")
+        difile_re = re.compile(r"!DIFile\(.*name: \"([^\"]+)\".*directory: \"([^\"]*)\"")
+        try:
+            with open(ir_path, "r", errors="ignore") as f:
+                for line in f:
+                    match = source_re.search(line)
+                    if match:
+                        hints.add(match.group(1))
+                    match = difile_re.search(line)
+                    if match:
+                        name = match.group(1)
+                        directory = match.group(2)
+                        hints.add(name)
+                        if directory:
+                            hints.add(os.path.join(directory, name))
+        except (OSError, UnicodeDecodeError):
+            return hints
+        return hints
+
     wrapper_paths = find_wrappers()
     include_hints = included_sources(wrapper_paths)
+    ir_hints = ll_source_hints(ll_path)
 
-    for hint in include_hints:
+    prioritized = list(include_hints) + list(ir_hints) + list(candidates)
+    for hint in prioritized:
         resolved = existing_path(hint)
-        if resolved:
-            return resolved
-
-    for candidate in candidates:
-        resolved = existing_path(candidate)
         if resolved:
             return resolved
 
@@ -251,6 +272,7 @@ def locate_source_file(source_name, workdir, candidates):
     basenames.add(f"{source_name}.c")
     basenames.update({os.path.basename(path) for path in include_hints})
     basenames.update({os.path.basename(path) for path in wrapper_paths})
+    basenames.update({os.path.basename(path) for path in ir_hints})
 
     search_roots = [base_dir, parent_dir]
     if repo_root and repo_root not in search_roots:
@@ -264,7 +286,7 @@ def locate_source_file(source_name, workdir, candidates):
                     if resolved:
                         return resolved
 
-        for hint in include_hints:
+        for hint in include_hints.union(ir_hints):
             if os.path.sep in hint:
                 potential = os.path.normpath(os.path.join(root_dir, hint))
                 resolved = existing_path(potential)
@@ -290,7 +312,7 @@ def annotate_source(source_name, workdir, taintres, llfile):
         os.path.join(workdir, f"{source_name}.c"),
     ]
 
-    source_path = locate_source_file(source_name, workdir, candidates)
+    source_path = locate_source_file(source_name, workdir, candidates, ll_path=ll_path)
     if not source_path:
         return
 
