@@ -237,7 +237,9 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
             return None, set()
 
         source_re = re.compile(r"source_filename\s*=\s*\"([^\"]+)\"")
-        difile_re = re.compile(r"!(\d+)\s*=\s*!DIFile\(.*filename:\s*\"([^\"]+)\".*directory:\s*\"([^\"]*)\"\")")
+        difile_re = re.compile(
+            r"!(\d+)\s*=\s*!DIFile\([^)]*filename:\s*\"([^\"]+)\"[^)]*directory:\s*\"([^\"]*)\"\)"
+        )
         cu_re = re.compile(r"!(\d+)\s*=\s*distinct\s*!DICompileUnit\([^)]*file:\s*!([0-9]+)")
         cu_list_re = re.compile(r"!llvm\.dbg\.cu\s*=\s*!\{([^}]*)\}")
 
