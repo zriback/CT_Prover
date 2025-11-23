@@ -75,9 +75,9 @@ def find_branch_in_ir(ir_lines, operands):
 
 def find_load_in_ir(ir_lines, dest, pointer):
     load_re = re.compile(
-        r"\b" + re.escape(dest) +
+        r"(?<!\\S)" + re.escape(dest) +
         r"\s*=\s*load\b.*?,\s*[^,]*\s+" + re.escape(pointer) +
-        r"\b.*!dbg\s+!(\d+)"
+        r"(?![\w\.]).*!dbg\s+!(\d+)"
     )
 
     for idx, line in enumerate(ir_lines):
@@ -91,7 +91,7 @@ def find_load_in_ir(ir_lines, dest, pointer):
 
 def find_div_in_ir(ir_lines, dest):
     div_re = re.compile(
-        r"\b" + re.escape(dest) +
+        r"(?<!\\S)" + re.escape(dest) +
         r"\s*=\s*(?:fdiv|[su]?div)\b.*!dbg\s+!(\d+)"
     )
 
