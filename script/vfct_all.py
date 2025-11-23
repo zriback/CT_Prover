@@ -232,6 +232,25 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                 continue
         return seen
 
+    def resolve_di_path(name, directory):
+        if os.path.isabs(name):
+            return os.path.abspath(name)
+
+        base = None
+        if directory:
+            if os.path.isabs(directory):
+                base = directory
+            elif ll_dir:
+                base = os.path.abspath(os.path.join(ll_dir, directory))
+            else:
+                base = os.path.abspath(os.path.join(workdir, directory))
+        elif ll_dir:
+            base = ll_dir
+        else:
+            base = workdir
+
+        return os.path.abspath(os.path.join(base, name))
+
     def ll_source_hints(ir_path):
         if not ir_path or not os.path.isfile(ir_path):
             return None, set()
@@ -253,13 +272,17 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                 for line in f:
                     src_match = source_re.search(line)
                     if src_match:
-                        hints.add(src_match.group(1))
+                        src_name = src_match.group(1)
+                        hints.add(src_name)
+                        hints.add(resolve_di_path(src_name, None))
 
                     di_match = difile_re.search(line)
                     if di_match:
                         di_id, name, directory = di_match.groups()
-                        difiles[di_id] = (name, directory)
+                        resolved = resolve_di_path(name, directory)
+                        difiles[di_id] = (name, directory, resolved)
                         hints.add(name)
+                        hints.add(resolved)
                         if directory:
                             hints.add(os.path.join(directory, name))
 
@@ -280,18 +303,20 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
 
         for cu_id, file_id in compile_units:
             if file_id and file_id in difiles:
-                name, directory = difiles[file_id]
-                primary_hint = os.path.join(directory, name) if directory else name
+                name, directory, resolved = difiles[file_id]
+                primary_hint = resolved
                 hints.add(name)
+                hints.add(resolved)
                 if directory:
-                    hints.add(primary_hint)
+                    hints.add(os.path.join(directory, name))
                 break
             if cu_id in difiles:
-                name, directory = difiles[cu_id]
-                primary_hint = os.path.join(directory, name) if directory else name
+                name, directory, resolved = difiles[cu_id]
+                primary_hint = resolved
                 hints.add(name)
+                hints.add(resolved)
                 if directory:
-                    hints.add(primary_hint)
+                    hints.add(os.path.join(directory, name))
                 break
 
         return primary_hint, hints
