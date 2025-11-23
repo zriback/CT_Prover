@@ -267,6 +267,7 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
         primary_hint = None
         primary_reason = None
         difiles = {}
+        difile_entries = []
         compile_units = []
         file_usage = {}
 
@@ -288,7 +289,9 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                     if di_match:
                         di_id, name, directory = di_match.groups()
                         resolved = resolve_di_path(name, directory)
-                        difiles[di_id] = (name, directory, resolved)
+                        exists = os.path.isfile(resolved)
+                        difiles[di_id] = (name, directory, resolved, exists)
+                        difile_entries.append((di_id, name, directory, resolved, exists))
                         add_hint(resolved, "LLVM DIFile entry")
                         if directory:
                             add_hint(os.path.join(directory, name), "LLVM DIFile entry")
@@ -311,21 +314,34 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
         except (OSError, UnicodeDecodeError):
             return primary_hint, hints
 
-        # Prefer the most referenced DIFile path in the IR (locations/subprograms)
-        if file_usage:
-            best_file_id = max(file_usage.items(), key=lambda kv: kv[1])[0]
-            if best_file_id in difiles:
-                name, directory, resolved = difiles[best_file_id]
-                primary_hint = resolved
-                primary_reason = "LLVM most-referenced DIFile"
-                add_hint(resolved, primary_reason)
-                if directory:
-                    add_hint(os.path.join(directory, name), primary_reason)
+        existing_entries = [(di_id, name, directory, resolved, exists) for di_id, name, directory, resolved, exists in difile_entries if exists]
+        source_stem = os.path.splitext(source_name)[0]
+
+        def pick_best(entries, usage_reason, default_reason):
+            nonlocal primary_hint, primary_reason
+            if not entries:
+                return False
+            def usage_key(item):
+                return file_usage.get(item[0], 0)
+            best = max(entries, key=usage_key)
+            _, name, directory, resolved, _ = best
+            primary_hint = resolved
+            primary_reason = usage_reason if file_usage else default_reason
+            add_hint(resolved, primary_reason)
+            if directory:
+                add_hint(os.path.join(directory, name), primary_reason)
+            return True
+
+        basename_matches = [entry for entry in existing_entries if os.path.splitext(os.path.basename(entry[3]))[0] == source_stem]
+        if pick_best(basename_matches, "LLVM DIFile match (basename, most referenced)", "LLVM DIFile match (basename)"):
+            pass
+        elif pick_best(existing_entries, "LLVM most-referenced existing DIFile", "LLVM existing DIFile"):
+            pass
 
         if not primary_hint:
             for cu_id, file_id in compile_units:
                 if file_id and file_id in difiles:
-                    name, directory, resolved = difiles[file_id]
+                    name, directory, resolved, _ = difiles[file_id]
                     primary_hint = resolved
                     primary_reason = "LLVM DICompileUnit file reference"
                     add_hint(resolved, primary_reason)
@@ -333,7 +349,7 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                         add_hint(os.path.join(directory, name), primary_reason)
                     break
                 if cu_id in difiles:
-                    name, directory, resolved = difiles[cu_id]
+                    name, directory, resolved, _ = difiles[cu_id]
                     primary_hint = resolved
                     primary_reason = "LLVM DICompileUnit direct file"
                     add_hint(resolved, primary_reason)
