@@ -163,74 +163,16 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
-def locate_source_file(source_name, workdir, candidates, ll_path=None):
+def locate_source_file(source_name, workdir, candidates, ll_path=None, taint_path=None):
     base_dir = os.path.abspath(workdir)
     ll_dir = os.path.dirname(os.path.abspath(ll_path)) if ll_path else None
-    try:
-        repo_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
-        ).strip()
-    except subprocess.CalledProcessError:
-        repo_root = None
-    parent_dir = os.path.dirname(base_dir)
 
     def resolve_path(path):
         if os.path.isabs(path):
-            return path
+            return os.path.abspath(path)
         if ll_dir:
             return os.path.abspath(os.path.join(ll_dir, path))
         return os.path.abspath(os.path.join(workdir, path))
-
-    def existing_path(path):
-        candidate = resolve_path(path)
-        if os.path.isfile(candidate):
-            return candidate
-        return None
-
-    def find_wrappers():
-        wrappers = []
-        seen = set()
-
-        def collect(dir_path):
-            if not os.path.isdir(dir_path):
-                return
-            for entry in os.listdir(dir_path):
-                if entry.endswith(".c"):
-                    full = os.path.join(dir_path, entry)
-                    if full not in seen:
-                        wrappers.append(full)
-                        seen.add(full)
-
-        current = base_dir
-        stop_dir = repo_root if repo_root else os.path.abspath(os.sep)
-        while True:
-            collect(current)
-            if current == stop_dir:
-                break
-            parent = os.path.dirname(current)
-            if parent == current:
-                break
-            current = parent
-
-        return wrappers
-
-    def included_sources(wrapper_paths):
-        include_re = re.compile(r"^\s*#\s*include\s+\"([^\"]+)\"")
-        seen = set()
-        for wrapper_path in wrapper_paths:
-            try:
-                with open(wrapper_path, "r") as f:
-                    for line in f:
-                        match = include_re.match(line)
-                        if match:
-                            inc = match.group(1)
-                            if inc.endswith(".c"):
-                                resolved = os.path.normpath(os.path.join(os.path.dirname(wrapper_path), inc))
-                                seen.add(resolved)
-                                seen.add(os.path.basename(inc))
-            except (OSError, UnicodeDecodeError):
-                continue
-        return seen
 
     def resolve_di_path(name, directory):
         if os.path.isabs(name):
@@ -251,197 +193,122 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
 
         return os.path.abspath(os.path.join(base, name))
 
-    def ll_source_hints(ir_path):
+    def parse_ir_metadata(ir_path):
         if not ir_path or not os.path.isfile(ir_path):
-            return None, []
+            return {}, {}, {}
 
-        source_re = re.compile(r"source_filename\s*=\s*\"([^\"]+)\"")
+        difiles = {}
+        scopes = {}
+        dilocs = {}
+
         difile_re = re.compile(
             r"!(\d+)\s*=\s*!DIFile\([^)]*filename:\s*\"([^\"]+)\"[^)]*directory:\s*\"([^\"]*)\"\)"
         )
-        cu_re = re.compile(r"!(\d+)\s*=\s*distinct\s*!DICompileUnit\([^)]*file:\s*!([0-9]+)")
-        cu_list_re = re.compile(r"!llvm\.dbg\.cu\s*=\s*!\{([^}]*)\}")
-
-        hints = []
-        seen = set()
-        primary_hint = None
-        primary_reason = None
-        difiles = {}
-        difile_entries = []
-        compile_units = []
-        file_usage = {}
-
-        def add_hint(path, reason):
-            normalized = os.path.abspath(path)
-            if normalized not in seen:
-                hints.append((normalized, reason))
-                seen.add(normalized)
+        scope_re = re.compile(r"!(\d+)\s*=\s*(?:distinct\s+)?!DI(\w+)\(([^)]*)\)")
+        file_field_re = re.compile(r"file:\s*!([0-9]+)")
+        scope_field_re = re.compile(r"scope:\s*!([0-9]+)")
+        diloc_re = re.compile(
+            r"!(\d+)\s*=\s*!DILocation\([^)]*line:\s*(\d+)[^)]*scope:\s*!([0-9]+)(?:[^)]*inlinedAt:\s*!([0-9]+))?"
+        )
 
         try:
             with open(ir_path, "r", errors="ignore") as f:
                 for line in f:
-                    src_match = source_re.search(line)
-                    if src_match:
-                        src_name = src_match.group(1)
-                        add_hint(resolve_di_path(src_name, None), "LLVM source_filename")
-
                     di_match = difile_re.search(line)
                     if di_match:
                         di_id, name, directory = di_match.groups()
-                        resolved = resolve_di_path(name, directory)
-                        exists = os.path.isfile(resolved)
-                        difiles[di_id] = (name, directory, resolved, exists)
-                        difile_entries.append((di_id, name, directory, resolved, exists))
-                        add_hint(resolved, "LLVM DIFile entry")
-                        if directory:
-                            add_hint(os.path.join(directory, name), "LLVM DIFile entry")
+                        difiles[di_id] = resolve_di_path(name, directory)
+                        continue
 
-                    cu_match = cu_re.search(line)
-                    if cu_match:
-                        cu_id, file_id = cu_match.groups()
-                        compile_units.append((cu_id, file_id))
+                    loc_match = diloc_re.search(line)
+                    if loc_match:
+                        loc_id, line_no, scope_id, inline_id = loc_match.groups()
+                        dilocs[loc_id] = {
+                            "line": int(line_no),
+                            "scope": scope_id,
+                            "inline": inline_id,
+                        }
+                        continue
 
-                    cu_list_match = cu_list_re.search(line)
-                    if cu_list_match:
-                        cu_entries = cu_list_match.group(1)
-                        for entry in cu_entries.split(','):
-                            entry = entry.strip()
-                            if entry.startswith('!'):
-                                compile_units.append((entry[1:], None))
-
-                    for file_ref in re.findall(r"file:\s*!([0-9]+)", line):
-                        file_usage[file_ref] = file_usage.get(file_ref, 0) + 1
+                    scope_match = scope_re.search(line)
+                    if scope_match:
+                        scope_id, _kind, content = scope_match.groups()
+                        file_field = file_field_re.search(content)
+                        scope_field = scope_field_re.search(content)
+                        file_id = file_field.group(1) if file_field else None
+                        parent_scope = scope_field.group(1) if scope_field else None
+                        if file_id or parent_scope:
+                            scopes[scope_id] = {
+                                "file": file_id,
+                                "parent": parent_scope,
+                            }
         except (OSError, UnicodeDecodeError):
-            return primary_hint, hints
+            return {}, {}, {}
 
-        existing_entries = [(di_id, name, directory, resolved, exists) for di_id, name, directory, resolved, exists in difile_entries if exists]
-        source_stem = os.path.splitext(source_name)[0]
+        return difiles, scopes, dilocs
 
-        def pick_best(entries, usage_reason, default_reason):
-            nonlocal primary_hint, primary_reason
-            if not entries:
-                return False
-            def usage_key(item):
-                return file_usage.get(item[0], 0)
-            best = max(entries, key=usage_key)
-            _, name, directory, resolved, _ = best
-            primary_hint = resolved
-            primary_reason = usage_reason if file_usage else default_reason
-            add_hint(resolved, primary_reason)
-            if directory:
-                add_hint(os.path.join(directory, name), primary_reason)
-            return True
+    def resolve_scope_file(scope_id, scopes, difiles):
+        seen = set()
+        current = scope_id
+        while current and current not in seen:
+            seen.add(current)
+            scope_info = scopes.get(current, {})
+            file_id = scope_info.get("file")
+            parent = scope_info.get("parent")
+            if file_id and file_id in difiles:
+                return difiles[file_id]
+            current = parent
+        return None
 
-        basename_matches = [entry for entry in existing_entries if os.path.splitext(os.path.basename(entry[3]))[0] == source_stem]
-        if pick_best(basename_matches, "LLVM DIFile match (basename, most referenced)", "LLVM DIFile match (basename)"):
-            pass
-        elif pick_best(existing_entries, "LLVM most-referenced existing DIFile", "LLVM existing DIFile"):
-            pass
+    def resolve_dbg_file(dbg_id, scopes, difiles, dilocs):
+        loc = dilocs.get(dbg_id)
+        if not loc:
+            return None
 
-        if not primary_hint:
-            for cu_id, file_id in compile_units:
-                if file_id and file_id in difiles:
-                    name, directory, resolved, _ = difiles[file_id]
-                    primary_hint = resolved
-                    primary_reason = "LLVM DICompileUnit file reference"
-                    add_hint(resolved, primary_reason)
-                    if directory:
-                        add_hint(os.path.join(directory, name), primary_reason)
-                    break
-                if cu_id in difiles:
-                    name, directory, resolved, _ = difiles[cu_id]
-                    primary_hint = resolved
-                    primary_reason = "LLVM DICompileUnit direct file"
-                    add_hint(resolved, primary_reason)
-                    if directory:
-                        add_hint(os.path.join(directory, name), primary_reason)
-                    break
+        inline = loc.get("inline")
+        if inline and inline in dilocs:
+            inline_scope = dilocs[inline].get("scope")
+            path = resolve_scope_file(inline_scope, scopes, difiles)
+            if path:
+                return path
 
-        return (primary_hint, primary_reason), hints
+        return resolve_scope_file(loc.get("scope"), scopes, difiles)
 
-    wrapper_paths = find_wrappers()
-    include_hints = included_sources(wrapper_paths)
-    primary_ir_info, ir_hints = ll_source_hints(ll_path)
+    def source_from_dbg(ir_path, taintres_path):
+        difiles, scopes, dilocs = parse_ir_metadata(ir_path)
+        if not difiles or not dilocs:
+            return None, "missing metadata"
 
-    prioritized = []
-    seen_prioritized = set()
+        dbg_ids = set()
+        dbg_re = re.compile(r"!dbg\s*!([0-9]+)")
+        try:
+            with open(taintres_path, "r", errors="ignore") as f:
+                for line in f:
+                    for dbg in dbg_re.findall(line):
+                        dbg_ids.add(dbg)
+        except (OSError, UnicodeDecodeError):
+            return None, "taintres read failure"
 
-    def add_prioritized(path, reason):
-        if not path:
-            return
-        reason = reason or "LLVM hint"
-        normalized = os.path.abspath(path)
-        if normalized not in seen_prioritized:
-            prioritized.append((normalized, reason))
-            seen_prioritized.add(normalized)
+        file_counts = {}
+        for dbg in dbg_ids:
+            path = resolve_dbg_file(dbg, scopes, difiles, dilocs)
+            if path:
+                resolved = resolve_path(path)
+                file_counts[resolved] = file_counts.get(resolved, 0) + 1
 
-    if primary_ir_info and primary_ir_info[0]:
-        add_prioritized(primary_ir_info[0], primary_ir_info[1])
-    for hint, reason in ir_hints:
-        add_prioritized(hint, reason)
-    for inc in include_hints:
-        add_prioritized(inc, "wrapper include hint")
-    for cand in candidates:
-        add_prioritized(cand, "candidate argument")
+        if not file_counts:
+            return None, "no file from dbg"
 
-    for hint, reason in prioritized:
-        resolved = existing_path(hint)
-        if resolved:
-            print(f"[DEBUG] Using source file: {resolved} (method: {reason})")
-            return resolved
+        best_path = max(file_counts.items(), key=lambda kv: kv[1])[0]
+        return best_path, "dbg->DILocation->DIFile"
 
-    for root_dir in [base_dir, parent_dir]:
-        candidate = os.path.join(root_dir, f"{source_name}.c")
-        resolved = existing_path(candidate)
-        if resolved:
-            print(f"[DEBUG] Using source file: {resolved} (method: parent/base directory scan)")
-            return resolved
+    chosen, reason = source_from_dbg(ll_path, taint_path)
+    if chosen and os.path.isfile(chosen):
+        print(f"[DEBUG] Using source file: {chosen} (method: {reason})")
+        return chosen
 
-    ir_hint_paths = {path for path, _ in ir_hints}
-    basenames = {os.path.basename(path) for path in candidates}
-    basenames.add(f"{source_name}.c")
-    basenames.update({os.path.basename(path) for path in include_hints})
-    basenames.update({os.path.basename(path) for path in wrapper_paths})
-    basenames.update({os.path.basename(path) for path in ir_hint_paths})
-
-    search_roots = [base_dir, parent_dir]
-    if ll_dir and ll_dir not in search_roots:
-        search_roots.append(ll_dir)
-    if repo_root and repo_root not in search_roots:
-        search_roots.append(repo_root)
-
-    for root_dir in search_roots:
-        for current_root, _, files in os.walk(root_dir):
-            for filename in files:
-                if filename in basenames:
-                    resolved = existing_path(os.path.join(current_root, filename))
-                    if resolved:
-                        print(f"[DEBUG] Using source file: {resolved} (method: recursive search)")
-                        return resolved
-
-        for hint in include_hints:
-            if os.path.sep in hint:
-                potential = os.path.normpath(os.path.join(root_dir, hint))
-                resolved = existing_path(potential)
-                if resolved:
-                    print(f"[DEBUG] Using source file: {resolved} (method: include hint path expansion)")
-                    return resolved
-        for hint_path in ir_hint_paths:
-            if os.path.sep in hint_path:
-                potential = os.path.normpath(os.path.join(root_dir, hint_path))
-                resolved = existing_path(potential)
-                if resolved:
-                    print(f"[DEBUG] Using source file: {resolved} (method: LLVM hint path expansion)")
-                    return resolved
-
-    if wrapper_paths:
-        resolved = resolve_path(wrapper_paths[0])
-        print(f"[DEBUG] Using source file: {resolved} (method: wrapper fallback)")
-        return resolved
-
-    print("[WARN] Could not locate source file for", source_name)
+    print("[WARN] Could not locate source file via dbg metadata for", source_name)
     return None
-
 
 def annotate_source(source_name, workdir, taintres, llfile):
     taintres_path = os.path.abspath(os.path.join(workdir, taintres))
@@ -456,7 +323,9 @@ def annotate_source(source_name, workdir, taintres, llfile):
         os.path.join(workdir, f"{source_name}.c"),
     ]
 
-    source_path = locate_source_file(source_name, workdir, candidates, ll_path=ll_path)
+    source_path = locate_source_file(
+        source_name, workdir, candidates, ll_path=ll_path, taint_path=taintres_path
+    )
     if not source_path:
         return
 
