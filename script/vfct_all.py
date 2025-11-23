@@ -316,10 +316,12 @@ def annotate_source(source_name, workdir, taintres, llfile):
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    annotate_cmd = "{exe} {taint} {ll}".format(
+    output_dir = os.path.abspath(workdir)
+    annotate_cmd = "{exe} {taint} {ll} {out}".format(
         exe=shlex.quote("annotate.py"),
         taint=shlex.quote(taintres_path),
         ll=shlex.quote(ll_path),
+        out=shlex.quote(output_dir),
     )
     runcommand(annotate_cmd, workdir=workdir)
 
