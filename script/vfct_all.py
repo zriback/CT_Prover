@@ -6,6 +6,7 @@ import shlex
 import time
 import json
 import threading
+import re
 
 import sys
 
@@ -162,8 +163,9 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
-def locate_source_file(source_name, workdir, candidates):
+def locate_source_file(source_name, workdir, candidates, ll_path=None):
     base_dir = os.path.abspath(workdir)
+    ll_dir = os.path.dirname(os.path.abspath(ll_path)) if ll_path else None
     try:
         repo_root = subprocess.check_output(
             ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
@@ -175,6 +177,8 @@ def locate_source_file(source_name, workdir, candidates):
     def resolve_path(path):
         if os.path.isabs(path):
             return path
+        if ll_dir:
+            return os.path.abspath(os.path.join(ll_dir, path))
         return os.path.abspath(os.path.join(workdir, path))
 
     def existing_path(path):
@@ -228,16 +232,80 @@ def locate_source_file(source_name, workdir, candidates):
                 continue
         return seen
 
+    def ll_source_hints(ir_path):
+        if not ir_path or not os.path.isfile(ir_path):
+            return None, set()
+
+        source_re = re.compile(r"source_filename\s*=\s*\"([^\"]+)\"")
+        difile_re = re.compile(r"!(\d+)\s*=\s*!DIFile\(.*filename:\s*\"([^\"]+)\".*directory:\s*\"([^\"]*)\"\")")
+        cu_re = re.compile(r"!(\d+)\s*=\s*distinct\s*!DICompileUnit\([^)]*file:\s*!([0-9]+)")
+        cu_list_re = re.compile(r"!llvm\.dbg\.cu\s*=\s*!\{([^}]*)\}")
+
+        hints = set()
+        primary_hint = None
+        difiles = {}
+        compile_units = []
+
+        try:
+            with open(ir_path, "r", errors="ignore") as f:
+                for line in f:
+                    src_match = source_re.search(line)
+                    if src_match:
+                        hints.add(src_match.group(1))
+
+                    di_match = difile_re.search(line)
+                    if di_match:
+                        di_id, name, directory = di_match.groups()
+                        difiles[di_id] = (name, directory)
+                        hints.add(name)
+                        if directory:
+                            hints.add(os.path.join(directory, name))
+
+                    cu_match = cu_re.search(line)
+                    if cu_match:
+                        cu_id, file_id = cu_match.groups()
+                        compile_units.append((cu_id, file_id))
+
+                    cu_list_match = cu_list_re.search(line)
+                    if cu_list_match:
+                        cu_entries = cu_list_match.group(1)
+                        for entry in cu_entries.split(','):
+                            entry = entry.strip()
+                            if entry.startswith('!'):
+                                compile_units.append((entry[1:], None))
+        except (OSError, UnicodeDecodeError):
+            return primary_hint, hints
+
+        for cu_id, file_id in compile_units:
+            if file_id and file_id in difiles:
+                name, directory = difiles[file_id]
+                primary_hint = os.path.join(directory, name) if directory else name
+                hints.add(name)
+                if directory:
+                    hints.add(primary_hint)
+                break
+            if cu_id in difiles:
+                name, directory = difiles[cu_id]
+                primary_hint = os.path.join(directory, name) if directory else name
+                hints.add(name)
+                if directory:
+                    hints.add(primary_hint)
+                break
+
+        return primary_hint, hints
+
     wrapper_paths = find_wrappers()
     include_hints = included_sources(wrapper_paths)
+    primary_ir_hint, ir_hints = ll_source_hints(ll_path)
 
-    for hint in include_hints:
+    prioritized = []
+    if primary_ir_hint:
+        prioritized.append(primary_ir_hint)
+    prioritized.extend(list(include_hints))
+    prioritized.extend(list(ir_hints))
+    prioritized.extend(list(candidates))
+    for hint in prioritized:
         resolved = existing_path(hint)
-        if resolved:
-            return resolved
-
-    for candidate in candidates:
-        resolved = existing_path(candidate)
         if resolved:
             return resolved
 
@@ -251,8 +319,11 @@ def locate_source_file(source_name, workdir, candidates):
     basenames.add(f"{source_name}.c")
     basenames.update({os.path.basename(path) for path in include_hints})
     basenames.update({os.path.basename(path) for path in wrapper_paths})
+    basenames.update({os.path.basename(path) for path in ir_hints})
 
     search_roots = [base_dir, parent_dir]
+    if ll_dir and ll_dir not in search_roots:
+        search_roots.append(ll_dir)
     if repo_root and repo_root not in search_roots:
         search_roots.append(repo_root)
 
@@ -264,7 +335,7 @@ def locate_source_file(source_name, workdir, candidates):
                     if resolved:
                         return resolved
 
-        for hint in include_hints:
+        for hint in include_hints.union(ir_hints):
             if os.path.sep in hint:
                 potential = os.path.normpath(os.path.join(root_dir, hint))
                 resolved = existing_path(potential)
@@ -290,7 +361,7 @@ def annotate_source(source_name, workdir, taintres, llfile):
         os.path.join(workdir, f"{source_name}.c"),
     ]
 
-    source_path = locate_source_file(source_name, workdir, candidates)
+    source_path = locate_source_file(source_name, workdir, candidates, ll_path=ll_path)
     if not source_path:
         return
 
