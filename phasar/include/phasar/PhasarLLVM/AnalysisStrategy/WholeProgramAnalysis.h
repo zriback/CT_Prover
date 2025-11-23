@@ -16,6 +16,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "phasar/DB/ProjectIRDB.h"
 #include "phasar/PhasarLLVM/AnalysisStrategy/AnalysisSetup.h"
@@ -170,23 +171,38 @@ public:
                         if(llvm::isa<llvm::DbgInfoIntrinsic>(&I))
                             continue;
 
-                        const llvm::Value* val = nullptr;
+                        std::vector<const llvm::Value *> TaintSeeds;
                         if(const auto *Load = llvm::dyn_cast<llvm::LoadInst>(&I)){
-                            val = Load->getPointerOperand();
+                            TaintSeeds.push_back(Load->getPointerOperand());
                         } else if(const auto *Store = llvm::dyn_cast<llvm::StoreInst>(&I)){
-                            val = Store->getPointerOperand();
+                            TaintSeeds.push_back(Store->getPointerOperand());
                         }else if(const llvm::BranchInst *Br = llvm::dyn_cast<llvm::BranchInst>(&I)){
                             if (Br->isUnconditional())
                                 continue;
-                            val = Br->getCondition();
+                            TaintSeeds.push_back(Br->getCondition());
+                        }else if(const auto *BinOp = llvm::dyn_cast<llvm::BinaryOperator>(&I)){
+                            switch (BinOp->getOpcode()) {
+                            case llvm::Instruction::SDiv:
+                            case llvm::Instruction::UDiv:
+                            case llvm::Instruction::FDiv:
+                                TaintSeeds.push_back(BinOp->getOperand(0));
+                                TaintSeeds.push_back(BinOp->getOperand(1));
+                                break;
+                            default:
+                                break;
+                            }
 //                        }else if(const llvm::CallInst* call = llvm::dyn_cast<llvm::CallInst>(&I)){
 //                            if()
                         }
-                        if(val){
-                            typename ProblemDescription::d_t d(val,0);
+                        if(!TaintSeeds.empty()){
                             auto taintres = DataFlowSolver.resultsAt(&I);
-                            if(taintres.find(d) != taintres.end())
-                                res.insert(&I);
+                            for (const auto *Seed : TaintSeeds) {
+                                typename ProblemDescription::d_t d(Seed,0);
+                                if(taintres.find(d) != taintres.end()){
+                                    res.insert(&I);
+                                    break;
+                                }
+                            }
                         }
 
 
