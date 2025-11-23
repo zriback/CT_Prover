@@ -253,7 +253,7 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
 
     def ll_source_hints(ir_path):
         if not ir_path or not os.path.isfile(ir_path):
-            return None, set()
+            return None, []
 
         source_re = re.compile(r"source_filename\s*=\s*\"([^\"]+)\"")
         difile_re = re.compile(
@@ -262,10 +262,18 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
         cu_re = re.compile(r"!(\d+)\s*=\s*distinct\s*!DICompileUnit\([^)]*file:\s*!([0-9]+)")
         cu_list_re = re.compile(r"!llvm\.dbg\.cu\s*=\s*!\{([^}]*)\}")
 
-        hints = set()
+        hints = []
+        seen = set()
         primary_hint = None
+        primary_reason = None
         difiles = {}
         compile_units = []
+
+        def add_hint(path, reason):
+            normalized = os.path.abspath(path)
+            if normalized not in seen:
+                hints.append((normalized, reason))
+                seen.add(normalized)
 
         try:
             with open(ir_path, "r", errors="ignore") as f:
@@ -273,18 +281,16 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                     src_match = source_re.search(line)
                     if src_match:
                         src_name = src_match.group(1)
-                        hints.add(src_name)
-                        hints.add(resolve_di_path(src_name, None))
+                        add_hint(resolve_di_path(src_name, None), "LLVM source_filename")
 
                     di_match = difile_re.search(line)
                     if di_match:
                         di_id, name, directory = di_match.groups()
                         resolved = resolve_di_path(name, directory)
                         difiles[di_id] = (name, directory, resolved)
-                        hints.add(name)
-                        hints.add(resolved)
+                        add_hint(resolved, "LLVM DIFile entry")
                         if directory:
-                            hints.add(os.path.join(directory, name))
+                            add_hint(os.path.join(directory, name), "LLVM DIFile entry")
 
                     cu_match = cu_re.search(line)
                     if cu_match:
@@ -305,48 +311,66 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
             if file_id and file_id in difiles:
                 name, directory, resolved = difiles[file_id]
                 primary_hint = resolved
-                hints.add(name)
-                hints.add(resolved)
+                primary_reason = "LLVM DICompileUnit file reference"
+                add_hint(resolved, primary_reason)
                 if directory:
-                    hints.add(os.path.join(directory, name))
+                    add_hint(os.path.join(directory, name), primary_reason)
                 break
             if cu_id in difiles:
                 name, directory, resolved = difiles[cu_id]
                 primary_hint = resolved
-                hints.add(name)
-                hints.add(resolved)
+                primary_reason = "LLVM DICompileUnit direct file"
+                add_hint(resolved, primary_reason)
                 if directory:
-                    hints.add(os.path.join(directory, name))
+                    add_hint(os.path.join(directory, name), primary_reason)
                 break
 
-        return primary_hint, hints
+        return (primary_hint, primary_reason), hints
 
     wrapper_paths = find_wrappers()
     include_hints = included_sources(wrapper_paths)
-    primary_ir_hint, ir_hints = ll_source_hints(ll_path)
+    primary_ir_info, ir_hints = ll_source_hints(ll_path)
 
     prioritized = []
-    if primary_ir_hint:
-        prioritized.append(primary_ir_hint)
-    prioritized.extend(list(include_hints))
-    prioritized.extend(list(ir_hints))
-    prioritized.extend(list(candidates))
-    for hint in prioritized:
+    seen_prioritized = set()
+
+    def add_prioritized(path, reason):
+        if not path:
+            return
+        reason = reason or "LLVM hint"
+        normalized = os.path.abspath(path)
+        if normalized not in seen_prioritized:
+            prioritized.append((normalized, reason))
+            seen_prioritized.add(normalized)
+
+    if primary_ir_info and primary_ir_info[0]:
+        add_prioritized(primary_ir_info[0], primary_ir_info[1])
+    for hint, reason in ir_hints:
+        add_prioritized(hint, reason)
+    for inc in include_hints:
+        add_prioritized(inc, "wrapper include hint")
+    for cand in candidates:
+        add_prioritized(cand, "candidate argument")
+
+    for hint, reason in prioritized:
         resolved = existing_path(hint)
         if resolved:
+            print(f"[DEBUG] Using source file: {resolved} (method: {reason})")
             return resolved
 
     for root_dir in [base_dir, parent_dir]:
         candidate = os.path.join(root_dir, f"{source_name}.c")
         resolved = existing_path(candidate)
         if resolved:
+            print(f"[DEBUG] Using source file: {resolved} (method: parent/base directory scan)")
             return resolved
 
+    ir_hint_paths = {path for path, _ in ir_hints}
     basenames = {os.path.basename(path) for path in candidates}
     basenames.add(f"{source_name}.c")
     basenames.update({os.path.basename(path) for path in include_hints})
     basenames.update({os.path.basename(path) for path in wrapper_paths})
-    basenames.update({os.path.basename(path) for path in ir_hints})
+    basenames.update({os.path.basename(path) for path in ir_hint_paths})
 
     search_roots = [base_dir, parent_dir]
     if ll_dir and ll_dir not in search_roots:
@@ -360,18 +384,30 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                 if filename in basenames:
                     resolved = existing_path(os.path.join(current_root, filename))
                     if resolved:
+                        print(f"[DEBUG] Using source file: {resolved} (method: recursive search)")
                         return resolved
 
-        for hint in include_hints.union(ir_hints):
+        for hint in include_hints:
             if os.path.sep in hint:
                 potential = os.path.normpath(os.path.join(root_dir, hint))
                 resolved = existing_path(potential)
                 if resolved:
+                    print(f"[DEBUG] Using source file: {resolved} (method: include hint path expansion)")
+                    return resolved
+        for hint_path in ir_hint_paths:
+            if os.path.sep in hint_path:
+                potential = os.path.normpath(os.path.join(root_dir, hint_path))
+                resolved = existing_path(potential)
+                if resolved:
+                    print(f"[DEBUG] Using source file: {resolved} (method: LLVM hint path expansion)")
                     return resolved
 
     if wrapper_paths:
-        return resolve_path(wrapper_paths[0])
+        resolved = resolve_path(wrapper_paths[0])
+        print(f"[DEBUG] Using source file: {resolved} (method: wrapper fallback)")
+        return resolved
 
+    print("[WARN] Could not locate source file for", source_name)
     return None
 
 
