@@ -268,6 +268,7 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
         primary_reason = None
         difiles = {}
         compile_units = []
+        file_usage = {}
 
         def add_hint(path, reason):
             normalized = os.path.abspath(path)
@@ -304,26 +305,41 @@ def locate_source_file(source_name, workdir, candidates, ll_path=None):
                             entry = entry.strip()
                             if entry.startswith('!'):
                                 compile_units.append((entry[1:], None))
+
+                    for file_ref in re.findall(r"file:\s*!([0-9]+)", line):
+                        file_usage[file_ref] = file_usage.get(file_ref, 0) + 1
         except (OSError, UnicodeDecodeError):
             return primary_hint, hints
 
-        for cu_id, file_id in compile_units:
-            if file_id and file_id in difiles:
-                name, directory, resolved = difiles[file_id]
+        # Prefer the most referenced DIFile path in the IR (locations/subprograms)
+        if file_usage:
+            best_file_id = max(file_usage.items(), key=lambda kv: kv[1])[0]
+            if best_file_id in difiles:
+                name, directory, resolved = difiles[best_file_id]
                 primary_hint = resolved
-                primary_reason = "LLVM DICompileUnit file reference"
+                primary_reason = "LLVM most-referenced DIFile"
                 add_hint(resolved, primary_reason)
                 if directory:
                     add_hint(os.path.join(directory, name), primary_reason)
-                break
-            if cu_id in difiles:
-                name, directory, resolved = difiles[cu_id]
-                primary_hint = resolved
-                primary_reason = "LLVM DICompileUnit direct file"
-                add_hint(resolved, primary_reason)
-                if directory:
-                    add_hint(os.path.join(directory, name), primary_reason)
-                break
+
+        if not primary_hint:
+            for cu_id, file_id in compile_units:
+                if file_id and file_id in difiles:
+                    name, directory, resolved = difiles[file_id]
+                    primary_hint = resolved
+                    primary_reason = "LLVM DICompileUnit file reference"
+                    add_hint(resolved, primary_reason)
+                    if directory:
+                        add_hint(os.path.join(directory, name), primary_reason)
+                    break
+                if cu_id in difiles:
+                    name, directory, resolved = difiles[cu_id]
+                    primary_hint = resolved
+                    primary_reason = "LLVM DICompileUnit direct file"
+                    add_hint(resolved, primary_reason)
+                    if directory:
+                        add_hint(os.path.join(directory, name), primary_reason)
+                    break
 
         return (primary_hint, primary_reason), hints
 
