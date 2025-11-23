@@ -6,6 +6,7 @@ import shlex
 import time
 import json
 import threading
+import re
 
 import sys
 
@@ -162,152 +163,163 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
     return end - st
 
 
-def locate_source_file(source_name, workdir, candidates):
+def locate_source_file(source_name, workdir, candidates, ll_path=None, taint_path=None):
     base_dir = os.path.abspath(workdir)
-    try:
-        repo_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], cwd=workdir, text=True
-        ).strip()
-    except subprocess.CalledProcessError:
-        repo_root = None
-    parent_dir = os.path.dirname(base_dir)
+    ll_dir = os.path.dirname(os.path.abspath(ll_path)) if ll_path else None
 
     def resolve_path(path):
         if os.path.isabs(path):
-            return path
+            return os.path.abspath(path)
+        if ll_dir:
+            return os.path.abspath(os.path.join(ll_dir, path))
         return os.path.abspath(os.path.join(workdir, path))
 
-    def existing_path(path):
-        candidate = resolve_path(path)
-        if os.path.isfile(candidate):
-            return candidate
+    def resolve_di_path(name, directory):
+        if os.path.isabs(name):
+            return os.path.abspath(name)
+
+        base = None
+        if directory:
+            if os.path.isabs(directory):
+                base = directory
+            elif ll_dir:
+                base = os.path.abspath(os.path.join(ll_dir, directory))
+            else:
+                base = os.path.abspath(os.path.join(workdir, directory))
+        elif ll_dir:
+            base = ll_dir
+        else:
+            base = workdir
+
+        return os.path.abspath(os.path.join(base, name))
+
+    def parse_ir_metadata(ir_path):
+        if not ir_path or not os.path.isfile(ir_path):
+            return {}, {}, {}
+
+        difiles = {}
+        scopes = {}
+        dilocs = {}
+
+        difile_re = re.compile(
+            r"!(\d+)\s*=\s*!DIFile\([^)]*filename:\s*\"([^\"]+)\"[^)]*directory:\s*\"([^\"]*)\"\)"
+        )
+        scope_re = re.compile(r"!(\d+)\s*=\s*(?:distinct\s+)?!DI(\w+)\(([^)]*)\)")
+        file_field_re = re.compile(r"file:\s*!([0-9]+)")
+        scope_field_re = re.compile(r"scope:\s*!([0-9]+)")
+        diloc_re = re.compile(
+            r"!(\d+)\s*=\s*!DILocation\([^)]*line:\s*(\d+)[^)]*scope:\s*!([0-9]+)(?:[^)]*inlinedAt:\s*!([0-9]+))?"
+        )
+
+        try:
+            with open(ir_path, "r", errors="ignore") as f:
+                for line in f:
+                    di_match = difile_re.search(line)
+                    if di_match:
+                        di_id, name, directory = di_match.groups()
+                        difiles[di_id] = resolve_di_path(name, directory)
+                        continue
+
+                    loc_match = diloc_re.search(line)
+                    if loc_match:
+                        loc_id, line_no, scope_id, inline_id = loc_match.groups()
+                        dilocs[loc_id] = {
+                            "line": int(line_no),
+                            "scope": scope_id,
+                            "inline": inline_id,
+                        }
+                        continue
+
+                    scope_match = scope_re.search(line)
+                    if scope_match:
+                        scope_id, _kind, content = scope_match.groups()
+                        file_field = file_field_re.search(content)
+                        scope_field = scope_field_re.search(content)
+                        file_id = file_field.group(1) if file_field else None
+                        parent_scope = scope_field.group(1) if scope_field else None
+                        if file_id or parent_scope:
+                            scopes[scope_id] = {
+                                "file": file_id,
+                                "parent": parent_scope,
+                            }
+        except (OSError, UnicodeDecodeError):
+            return {}, {}, {}
+
+        return difiles, scopes, dilocs
+
+    def resolve_scope_file(scope_id, scopes, difiles):
+        seen = set()
+        current = scope_id
+        while current and current not in seen:
+            seen.add(current)
+            scope_info = scopes.get(current, {})
+            file_id = scope_info.get("file")
+            parent = scope_info.get("parent")
+            if file_id and file_id in difiles:
+                return difiles[file_id]
+            current = parent
         return None
 
-    def find_wrappers():
-        wrappers = []
-        seen = set()
+    def resolve_dbg_file(dbg_id, scopes, difiles, dilocs):
+        loc = dilocs.get(dbg_id)
+        if not loc:
+            return None
 
-        def collect(dir_path):
-            if not os.path.isdir(dir_path):
-                return
-            for entry in os.listdir(dir_path):
-                if entry.endswith(".c"):
-                    full = os.path.join(dir_path, entry)
-                    if full not in seen:
-                        wrappers.append(full)
-                        seen.add(full)
+        inline = loc.get("inline")
+        if inline and inline in dilocs:
+            inline_scope = dilocs[inline].get("scope")
+            path = resolve_scope_file(inline_scope, scopes, difiles)
+            if path:
+                return path
 
-        current = base_dir
-        stop_dir = repo_root if repo_root else os.path.abspath(os.sep)
-        while True:
-            collect(current)
-            if current == stop_dir:
-                break
-            parent = os.path.dirname(current)
-            if parent == current:
-                break
-            current = parent
+        return resolve_scope_file(loc.get("scope"), scopes, difiles)
 
-        return wrappers
+    def source_from_dbg(ir_path, taintres_path):
+        difiles, scopes, dilocs = parse_ir_metadata(ir_path)
+        if not difiles or not dilocs:
+            return None, "missing metadata"
 
-    def included_sources(wrapper_paths):
-        include_re = re.compile(r"^\s*#\s*include\s+\"([^\"]+)\"")
-        seen = set()
-        for wrapper_path in wrapper_paths:
-            try:
-                with open(wrapper_path, "r") as f:
-                    for line in f:
-                        match = include_re.match(line)
-                        if match:
-                            inc = match.group(1)
-                            if inc.endswith(".c"):
-                                resolved = os.path.normpath(os.path.join(os.path.dirname(wrapper_path), inc))
-                                seen.add(resolved)
-                                seen.add(os.path.basename(inc))
-            except (OSError, UnicodeDecodeError):
-                continue
-        return seen
+        dbg_ids = set()
+        dbg_re = re.compile(r"!dbg\s*!([0-9]+)")
+        try:
+            with open(taintres_path, "r", errors="ignore") as f:
+                for line in f:
+                    for dbg in dbg_re.findall(line):
+                        dbg_ids.add(dbg)
+        except (OSError, UnicodeDecodeError):
+            return None, "taintres read failure"
 
-    wrapper_paths = find_wrappers()
-    include_hints = included_sources(wrapper_paths)
+        file_counts = {}
+        for dbg in dbg_ids:
+            path = resolve_dbg_file(dbg, scopes, difiles, dilocs)
+            if path:
+                resolved = resolve_path(path)
+                file_counts[resolved] = file_counts.get(resolved, 0) + 1
 
-    for hint in include_hints:
-        resolved = existing_path(hint)
-        if resolved:
-            return resolved
+        if not file_counts:
+            return None, "no file from dbg"
 
-    for candidate in candidates:
-        resolved = existing_path(candidate)
-        if resolved:
-            return resolved
+        best_path = max(file_counts.items(), key=lambda kv: kv[1])[0]
+        return best_path, "dbg->DILocation->DIFile"
 
-    for root_dir in [base_dir, parent_dir]:
-        candidate = os.path.join(root_dir, f"{source_name}.c")
-        resolved = existing_path(candidate)
-        if resolved:
-            return resolved
+    chosen, reason = source_from_dbg(ll_path, taint_path)
+    if chosen and os.path.isfile(chosen):
+        print(f"[DEBUG] Using source file: {chosen} (method: {reason})")
+        return chosen
 
-    basenames = {os.path.basename(path) for path in candidates}
-    basenames.add(f"{source_name}.c")
-    basenames.update({os.path.basename(path) for path in include_hints})
-    basenames.update({os.path.basename(path) for path in wrapper_paths})
-
-    search_roots = [base_dir, parent_dir]
-    if repo_root and repo_root not in search_roots:
-        search_roots.append(repo_root)
-
-    for root_dir in search_roots:
-        for current_root, _, files in os.walk(root_dir):
-            for filename in files:
-                if filename in basenames:
-                    resolved = existing_path(os.path.join(current_root, filename))
-                    if resolved:
-                        return resolved
-
-        for hint in include_hints:
-            if os.path.sep in hint:
-                potential = os.path.normpath(os.path.join(root_dir, hint))
-                resolved = existing_path(potential)
-                if resolved:
-                    return resolved
-
-    if wrapper_paths:
-        return resolve_path(wrapper_paths[0])
-
+    print("[WARN] Could not locate source file via dbg metadata for", source_name)
     return None
-
 
 def annotate_source(source_name, workdir, taintres, llfile):
     taintres_path = os.path.abspath(os.path.join(workdir, taintres))
     ll_path = os.path.abspath(os.path.join(workdir, llfile))
-
-    candidates = [
-        source_name,
-        f"{source_name}.c",
-        os.path.join(os.getcwd(), source_name),
-        os.path.join(os.getcwd(), f"{source_name}.c"),
-        os.path.join(workdir, source_name),
-        os.path.join(workdir, f"{source_name}.c"),
-    ]
-
-    source_path = locate_source_file(source_name, workdir, candidates)
-    if not source_path:
-        return
-
     if not os.path.isfile(taintres_path) or not os.path.isfile(ll_path):
         return
 
-    base_name = os.path.basename(source_path)
-    stem, ext = os.path.splitext(base_name)
-    output_name = f"{stem}_marked{ext or '.c'}"
-    output_path = os.path.abspath(os.path.join(workdir, output_name))
-
-    annotate_cmd = "{exe} {taint} {ll} {src} {dst}".format(
+    annotate_cmd = "{exe} {taint} {ll}".format(
         exe=shlex.quote("annotate.py"),
         taint=shlex.quote(taintres_path),
         ll=shlex.quote(ll_path),
-        src=shlex.quote(source_path),
-        dst=shlex.quote(output_path),
     )
     runcommand(annotate_cmd, workdir=workdir)
 
