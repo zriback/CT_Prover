@@ -15,6 +15,11 @@ def run_one_two_three_only():
     dirname = "one_and_two_and_three"
     vfct.mkdir(dirname)
 
+    # Ensure the LLVM IR for each entry is available inside the working
+    # directory, matching the behavior of vfct_find_bug's helper.
+    for item in vfct.entry:
+        vfct.runcommand(f"cp {item}.ll {dirname}")
+
     total = []
     phase1 = []
     phase2 = []
