@@ -56,14 +56,36 @@ def parse_trans(path: Path) -> Tuple[Optional[int], Optional[int]]:
 
 
 def find_detailtime_csv(start: Path) -> Optional[Tuple[Path, str]]:
+    """Locate the nearest timing CSV and identify its schema.
+
+    We have three expected layouts:
+    * "detailtime.csv" from `vfct_all.py`, which includes columns such as
+      "add-key"/"taint-analysis" and the rest of the pipelines.
+    * "one_and_two_and_three_detail.csv" from `vfct_find_bug.py`.
+    * "detailtime.csv" emitted by `vfct_123.py`, which only contains the
+      1+2+3 pipeline columns "1"/"2"/"2-2"/"3".
+    """
+
     for parent in [start] + list(start.parents):
-        for name, kind in (
-            ("detailtime.csv", "vfct_all"),
-            ("one_and_two_and_three_detail.csv", "vfct_find_bug"),
+        for candidate in (
+            parent / "detailtime.csv",
+            parent / "one_and_two_and_three_detail.csv",
         ):
-            candidate = parent / name
-            if candidate.exists():
-                return candidate, kind
+            if not candidate.exists():
+                continue
+
+            # Try to infer which schema is present by inspecting the header.
+            with candidate.open(newline="") as f:
+                reader = csv.reader(f)
+                header = next(reader, [])
+
+            header_set = set(header)
+            if "add-key" in header_set or "taint-analysis" in header_set:
+                return candidate, "vfct_all"
+            if {"1", "2", "2-2", "3"}.issubset(header_set):
+                return candidate, "vfct_123"
+            return candidate, "vfct_find_bug"
+
     return None
 
 
@@ -93,6 +115,27 @@ def parse_phase_times(
                 phase1_parts = [float_or_none("add-key"), float_or_none("taint-analysis")]
                 phase2_parts = [float_or_none("2-generatebpl"), float_or_none("2-product"), float_or_none("2-verify")]
                 phase3_parts = [float_or_none("3-generatebpl"), float_or_none("3-product"), float_or_none("3-verify")]
+            elif kind == "vfct_123":
+                if not (
+                    row.get("LIB") == lib
+                    and row.get("Filename") == filename
+                    and row.get("Entry-point") == entry
+                ):
+                    continue
+
+                def float_or_none(key: str) -> Optional[float]:
+                    val = row.get(key)
+                    if val is None or val == "":
+                        return None
+                    try:
+                        return float(val)
+                    except ValueError:
+                        return None
+
+                phase1_parts = [float_or_none("1")]
+                phase2_parts = [float_or_none("2"), float_or_none("2-2")]
+                phase3_parts = [float_or_none("3")]
+
             else:
                 if not (
                     row.get("LIB") == lib
