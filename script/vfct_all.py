@@ -1238,4 +1238,5 @@ def runall():
     collcet_time(verifytime, "verifytime.csv")
 
 # run()
-runall()
+if __name__ == "__main__":
+    runall()
