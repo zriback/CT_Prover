@@ -139,9 +139,16 @@ def main() -> None:
     for taint_file in taint_files:
         entry = taint_file.stem.replace("-taintres", "")
         trans_file = workdir / f"{entry}-trans.txt"
+        trans_missing_reason = None
 
         op_counts, total_taints = parse_taintres(taint_file)
-        all_sensitive, left_sensitive = parse_trans(trans_file) if trans_file.exists() else (None, None)
+        if trans_file.exists():
+            all_sensitive, left_sensitive = parse_trans(trans_file)
+        else:
+            all_sensitive = left_sensitive = None
+            trans_missing_reason = (
+                "missing transfer file (vfct_find_bug.py does not emit -trans.txt)"
+            )
 
         lib = workdir.parents[1].name if len(workdir.parents) >= 2 else ""
         filename = workdir.parents[0].name if workdir.parents else ""
@@ -166,6 +173,8 @@ def main() -> None:
             output_lines.append(f"All sensitive (phase 3 input): {all_sensitive}")
         if left_sensitive is not None:
             output_lines.append(f"Left sensitive (after phase 3): {left_sensitive}")
+        if all_sensitive is None and left_sensitive is None and trans_missing_reason:
+            output_lines.append(f"Phase 3 sensitivity counts unavailable: {trans_missing_reason}")
 
         output_lines.append("Phase timings (seconds):")
         output_lines.append(f"  Phase 1: {phase1 if phase1 is not None else 'n/a'}")
