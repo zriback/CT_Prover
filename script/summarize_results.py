@@ -55,19 +55,32 @@ def parse_trans(path: Path) -> Tuple[Optional[int], Optional[int]]:
     return all_sensitive, left_sensitive
 
 
-def find_detailtime_csv(start: Path) -> Optional[Path]:
+def find_detailtime_csv(start: Path) -> Optional[Tuple[Path, str]]:
     for parent in [start] + list(start.parents):
-        candidate = parent / "detailtime.csv"
-        if candidate.exists():
-            return candidate
+        for name, kind in (
+            ("detailtime.csv", "vfct_all"),
+            ("one_and_two_and_three_detail.csv", "vfct_find_bug"),
+        ):
+            candidate = parent / name
+            if candidate.exists():
+                return candidate, kind
     return None
 
 
-def parse_phase_times(detail_csv: Path, lib: str, filename: str, entry: str) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+def parse_phase_times(
+    detail_csv: Path, kind: str, lib: str, filename: str, entry: str
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
     with detail_csv.open(newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if row.get("LIB") == lib and row.get("Filename") == filename and row.get("Entry-point") == entry:
+            if kind == "vfct_all":
+                if not (
+                    row.get("LIB") == lib
+                    and row.get("Filename") == filename
+                    and row.get("Entry-point") == entry
+                ):
+                    continue
+
                 def float_or_none(key: str) -> Optional[float]:
                     val = row.get(key)
                     if val is None or val == "":
@@ -80,12 +93,32 @@ def parse_phase_times(detail_csv: Path, lib: str, filename: str, entry: str) -> 
                 phase1_parts = [float_or_none("add-key"), float_or_none("taint-analysis")]
                 phase2_parts = [float_or_none("2-generatebpl"), float_or_none("2-product"), float_or_none("2-verify")]
                 phase3_parts = [float_or_none("3-generatebpl"), float_or_none("3-product"), float_or_none("3-verify")]
+            else:
+                if not (
+                    row.get("LIB") == lib
+                    and row.get("crypto") == filename
+                    and row.get("algoritm") == entry
+                ):
+                    continue
 
-                def safe_sum(values: List[Optional[float]]) -> Optional[float]:
-                    nums = [v for v in values if v is not None]
-                    return sum(nums) if nums else None
+                def float_or_none(key: str) -> Optional[float]:
+                    val = row.get(key)
+                    if val is None or val == "":
+                        return None
+                    try:
+                        return float(val)
+                    except ValueError:
+                        return None
 
-                return safe_sum(phase1_parts), safe_sum(phase2_parts), safe_sum(phase3_parts)
+                phase1_parts = [float_or_none("1")]
+                phase2_parts = [float_or_none("product1")]
+                phase3_parts = [float_or_none("product2")]
+
+            def safe_sum(values: List[Optional[float]]) -> Optional[float]:
+                nums = [v for v in values if v is not None]
+                return sum(nums) if nums else None
+
+            return safe_sum(phase1_parts), safe_sum(phase2_parts), safe_sum(phase3_parts)
     return None, None, None
 
 
@@ -100,7 +133,7 @@ def main() -> None:
     if not taint_files:
         raise SystemExit("No *-taintres.txt files found in the current directory.")
 
-    detail_csv = find_detailtime_csv(workdir)
+    detail_csv_info = find_detailtime_csv(workdir)
     output_lines: List[str] = []
 
     for taint_file in taint_files:
@@ -114,8 +147,9 @@ def main() -> None:
         filename = workdir.parents[0].name if workdir.parents else ""
 
         phase1 = phase2 = phase3 = None
-        if detail_csv:
-            phase1, phase2, phase3 = parse_phase_times(detail_csv, lib, filename, entry)
+        if detail_csv_info:
+            csv_path, csv_kind = detail_csv_info
+            phase1, phase2, phase3 = parse_phase_times(csv_path, csv_kind, lib, filename, entry)
 
         output_lines.append(f"Entry: {entry}")
         output_lines.append("Taint operation counts:")
