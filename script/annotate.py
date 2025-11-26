@@ -22,10 +22,10 @@ def load_file(path):
 
 def extract_tainted_instructions(taint_lines):
     tainted = []
-    br_re = re.compile(r"br i1\s+(%[\w\d]+),\s+label\s+(%[\w\d]+),\s+label\s+(%[\w\d]+)")
-    load_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*load\b[^,]*,\s*[^%]*?(?P<pointer>%[\w\d\.]+)")
+    br_re = re.compile(r"br i1\s+(%[\w\d]+),\s+label\s+(%[\w\d]+),\s+label\s+(%[\w\d]+).*!dbg\s+!(\d+)")
+    load_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*load\b[^,]*,\s*[^%]*?(?P<pointer>%[\w\d\.]+).*!dbg\s+!(?P<dbg>\d+)")
     div_re = re.compile(
-        r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div|frem|[su]?rem)\b[^,]*,\s*(?P<rhs>[^,\s!]+)"
+        r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div|frem|[su]?rem)\b[^,]*,\s*(?P<rhs>[^,\s!]+).*!dbg\s+!(?P<dbg>\d+)"
     )
 
     for line in taint_lines:
@@ -34,6 +34,7 @@ def extract_tainted_instructions(taint_lines):
             tainted.append({
                 "kind": "branch",
                 "operands": (br_match.group(1), br_match.group(2), br_match.group(3)),
+                "dbg": br_match.group(4),
             })
             continue
 
@@ -43,6 +44,7 @@ def extract_tainted_instructions(taint_lines):
                 "kind": "load",
                 "dest": load_match.group("dest"),
                 "pointer": load_match.group("pointer"),
+                "dbg": load_match.group("dbg"),
             })
             continue
 
@@ -51,6 +53,7 @@ def extract_tainted_instructions(taint_lines):
             tainted.append({
                 "kind": "div",
                 "dest": div_match.group("dest"),
+                "dbg": div_match.group("dbg"),
             })
 
     if not tainted:
@@ -204,11 +207,85 @@ def annotate_c_file(c_lines, tainted_line_types):
     output = []
     for i, line in enumerate(c_lines, start=1):
         if i in tainted_line_types:
-            labels = [COMMENT_LABELS[kind] for kind in COMMENT_LABELS if kind in tainted_line_types[i]]
+            labels = []
+            for kind in sorted(tainted_line_types[i]):
+                phases = ",".join(str(p) for p in sorted(tainted_line_types[i][kind]))
+                labels.append(f"{COMMENT_LABELS[kind]} [{phases}]")
             output.append(line + "    // " + " & ".join(labels))
         else:
             output.append(line)
     return output
+
+
+def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
+    """Recover phase-2 and phase-3 survivors mapped to source locations."""
+
+    if not (os.path.isfile(trans_path) and os.path.isfile(bool_bpl_path)):
+        return set(), set()
+
+    with open(trans_path, "r") as f:
+        trans_lines = f.read().splitlines()
+
+    poss = set()
+    for line in trans_lines:
+        if "{" in line and "}" in line:
+            poss.update(int(m) for m in re.findall(r"\d+", line))
+            break
+
+    if not poss:
+        return set(), set()
+
+    def sourceloc_map(path):
+        mapping = {}
+        last_loc = None
+        base_dir = os.path.dirname(os.path.abspath(path))
+        loc_re = re.compile(r'\{:sourceloc\s+"([^"]+)",\s*(\d+),')
+        with open(path, "r", errors="ignore") as f:
+            for idx, line in enumerate(f):
+                match = loc_re.search(line)
+                if match:
+                    raw_path, lineno = match.groups()
+                    last_loc = (
+                        os.path.abspath(os.path.join(base_dir, raw_path)),
+                        int(lineno),
+                    )
+                if idx in poss and last_loc:
+                    mapping[idx] = last_loc
+        return mapping
+
+    phase2_map = sourceloc_map(bool_bpl_path)
+    phase2_locs = set(phase2_map.values())
+
+    phase3_locs = set()
+    if os.path.isfile(shadow_bpl_path):
+        patterns = [
+            r".*\$shadow_ok := \(\$shadow_ok.*",
+            r".*assert \$shadow_ok;",
+            r".*assert \{:shadow_invariant\} \$shadow_ok;",
+            r".*assert \{:shadow_invariant\} \(",
+            r".*assert \{:likely_shadow_invariant\} \(",
+            r".*assert \{:unlikely_shadow_invariant \(",
+            r".*assert.*==.*",
+        ]
+        compiled = [re.compile(p) for p in patterns]
+        shadow_loc_map = {}
+        last_loc = None
+        base_dir = os.path.dirname(os.path.abspath(shadow_bpl_path))
+        loc_re = re.compile(r'\{:sourceloc\s+"([^"]+)",\s*(\d+),')
+        with open(shadow_bpl_path, "r", errors="ignore") as f:
+            for idx, line in enumerate(f):
+                match = loc_re.search(line)
+                if match:
+                    raw_path, lineno = match.groups()
+                    last_loc = (
+                        os.path.abspath(os.path.join(base_dir, raw_path)),
+                        int(lineno),
+                    )
+                if idx in poss and any(p.match(line) for p in compiled) and last_loc:
+                    shadow_loc_map[idx] = last_loc
+        phase3_locs = set(shadow_loc_map.values())
+
+    return phase2_locs, phase3_locs
 
 def main():
     if len(sys.argv) < 3:
@@ -223,6 +300,16 @@ def main():
     ir_lines = load_file(ir_path)
     ll_dir = os.path.dirname(os.path.abspath(ir_path))
     output_base = os.path.abspath(output_dir) if output_dir else None
+
+    base_dir = os.path.dirname(os.path.abspath(taint_path))
+    entry = os.path.basename(taint_path).replace("-taintres.txt", "")
+    trans_path = os.path.join(base_dir, f"{entry}-trans.txt")
+    bool_bpl_path = os.path.join(base_dir, f"{entry}-bool.bpl")
+    shadow_bpl_path = os.path.join(base_dir, f"{entry}-shadow.bpl")
+
+    phase2_locs, phase3_locs = parse_transfer_sets(
+        trans_path, bool_bpl_path, shadow_bpl_path
+    )
 
     difiles, scopes, dilocs = parse_ir_metadata(ir_path, ll_dir)
     if not difiles or not dilocs:
@@ -265,12 +352,22 @@ def main():
             error(f"Could not map dbg !{dbg_num} to C source; skipping.")
             continue
 
+        normalized_src = os.path.abspath(src_path)
         if output_base:
-            src_path = os.path.abspath(src_path)
+            src_path = normalized_src
+
+        phases = [1]
+        if (normalized_src, c_line) in phase2_locs:
+            phases.append(2)
+        if (normalized_src, c_line) in phase3_locs:
+            if 2 not in phases:
+                phases.append(2)
+            phases.append(3)
 
         print(f"[INFO] Corresponds to C source {src_path} line {c_line}")
         file_entry = tainted_per_file.setdefault(src_path, {})
-        file_entry.setdefault(c_line, set()).add(comment_kind)
+        file_entry.setdefault(c_line, {})
+        file_entry[c_line].setdefault(comment_kind, set()).update(phases)
 
     if not tainted_per_file:
         error("No successful taint→source mappings. No marked files will be written.")
