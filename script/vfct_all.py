@@ -7,6 +7,8 @@ import time
 import json
 import threading
 import re
+import glob
+import shutil
 
 import sys
 
@@ -108,10 +110,23 @@ NoSplitAssert = False
 
 # 旧版的会有one_and_two_and_three()等的文件夹，现在不需要了给删除掉
 def preprocess():
-    runcommand("rm -rf one_and_two_and_three")
-    runcommand("rm -rf one_and_two_and_three-s")
-    runcommand("rm -rf two_and_three")
-    runcommand("rm -f totaltime2.csv")
+    def remove_matches(patterns):
+        for pattern in patterns:
+            for target in glob.glob(os.path.join(os.getcwd(), pattern)):
+                if os.path.isdir(target):
+                    shutil.rmtree(target, ignore_errors=True)
+                elif os.path.isfile(target):
+                    os.remove(target)
+
+    remove_matches([
+        "one_and_two_and_three",
+        "one_and_two_and_three-s",
+        "two_and_three",
+        "totaltime2.csv",
+    ])
+
+    # Remove any leftover experiment directories so marked files are not reused.
+    remove_matches(["one*", "single*", "chaifen*"])
     
 
 # 允许客制化config

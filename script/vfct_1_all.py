@@ -4,11 +4,18 @@
 This helper mirrors vfct_123_all by iterating over each benchmark
 subdirectory and invoking vfct_only1.py inside it. Run this script from the
 bech directory.
+
+Optionally pass one or more benchmark directory names (relative to bech) to
+restrict execution to just those benchmarks. For example::
+
+    python3 vfct_1_all.py tongsuo
+
+will only run ``vfct_only1.py`` within the ``tongsuo`` benchmark.
 """
 
 import os
 import subprocess
-import sys
+from argparse import ArgumentParser
 from typing import Iterable, List
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -79,12 +86,19 @@ def iter_benchmarks(base_dir: str, names: Iterable[str]) -> Iterable[str]:
 
 
 def main() -> None:
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "benchmarks",
+        nargs="*",
+        help="specific benchmark directories under ./bech to run",
+    )
+    args = parser.parse_args()
+
     base_dir = os.getcwd()
     if os.path.basename(base_dir) != "bech":
         raise SystemExit("Run vfct_1_all.py from the bech directory")
 
-    extra_args = sys.argv[1:]
-    for target in iter_benchmarks(base_dir, extra_args):
+    for target in iter_benchmarks(base_dir, args.benchmarks):
         run_runner_in_dir(target, [])
 
 
