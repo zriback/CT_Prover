@@ -42,11 +42,26 @@ def parse_taintres(path: Path) -> Tuple[OperationCounts, Optional[int]]:
     return counts, total_taints
 
 
-def parse_trans(path: Path) -> Tuple[Optional[int], Optional[int]]:
+def parse_trans(path: Path) -> Tuple[Optional[int], Optional[int], Optional[int]]:
+    """Parse transfer output.
+
+    Returns a tuple of (phase2_survivors, all_sensitive, left_sensitive).
+    The first element counts the failing assertions collected from the
+    Bool-product logs (the size of the set printed on the first line).
+    """
+
+    phase2_survivors = None
     all_sensitive = None
     left_sensitive = None
     lines = path.read_text().splitlines()
+
     for idx, line in enumerate(lines):
+        # The first line is typically a Python set representation, e.g. "{1, 2, 3}".
+        if phase2_survivors is None and "{" in line and "}" in line:
+            matches = re.findall(r"\d+", line)
+            if matches:
+                phase2_survivors = len({int(m) for m in matches})
+
         lower = line.strip().lower()
         if lower.startswith("all sensitive"):
             if idx + 1 < len(lines):
@@ -58,7 +73,8 @@ def parse_trans(path: Path) -> Tuple[Optional[int], Optional[int]]:
                 match = re.search(r"\d+", lines[idx + 1])
                 if match:
                     left_sensitive = int(match.group(0))
-    return all_sensitive, left_sensitive
+
+    return phase2_survivors, all_sensitive, left_sensitive
 
 
 def find_detailtime_csv(start: Path) -> Optional[Tuple[Path, str]]:
@@ -192,9 +208,9 @@ def main() -> None:
 
         op_counts, total_taints = parse_taintres(taint_file)
         if trans_file.exists():
-            all_sensitive, left_sensitive = parse_trans(trans_file)
+            phase2_survivors, all_sensitive, left_sensitive = parse_trans(trans_file)
         else:
-            all_sensitive = left_sensitive = None
+            phase2_survivors = all_sensitive = left_sensitive = None
             trans_missing_reason = (
                 "missing transfer file (vfct_find_bug.py does not emit -trans.txt)"
             )
@@ -215,13 +231,20 @@ def main() -> None:
         else:
             output_lines.append("  (no tainted operations listed)")
 
-        if total_taints is not None:
+        phase1_count = total_taints if total_taints is not None else sum(op_counts.values())
+        if phase1_count is not None:
+            output_lines.append(f"Tainted operations after phase 1: {phase1_count}")
+        if phase2_survivors is not None:
+            output_lines.append(
+                f"Tainted operations after phase 2: {phase2_survivors}"
+            )
+        if left_sensitive is not None:
+            output_lines.append(
+                f"Tainted operations after phase 3: {left_sensitive}"
+            )
+        if total_taints is not None and total_taints != phase1_count:
             output_lines.append(f"Total tainted operations: {total_taints}")
 
-        if all_sensitive is not None:
-            output_lines.append(f"All sensitive (phase 3 input): {all_sensitive}")
-        if left_sensitive is not None:
-            output_lines.append(f"Left sensitive (after phase 3): {left_sensitive}")
         if all_sensitive is None and left_sensitive is None and trans_missing_reason:
             output_lines.append(f"Phase 3 sensitivity counts unavailable: {trans_missing_reason}")
 
