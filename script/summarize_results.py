@@ -23,7 +23,13 @@ def parse_taintres(path: Path) -> Tuple[OperationCounts, Optional[int]]:
             stripped = line.strip()
             if not stripped:
                 continue
-            op = stripped.split()[0]
+
+            op_match = re.search(r"=\s*([A-Za-z][\w\.]*)", stripped)
+            if op_match:
+                op = op_match.group(1)
+            else:
+                op = stripped.split()[0]
+
             counts[op] = counts.get(op, 0) + 1
 
     if marker_index is not None:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
-import re
 import os
+import re
 
 COMMENT_LABELS = {
     "branch": "TAINTED BRANCH",
@@ -24,7 +24,9 @@ def extract_tainted_instructions(taint_lines):
     tainted = []
     br_re = re.compile(r"br i1\s+(%[\w\d]+),\s+label\s+(%[\w\d]+),\s+label\s+(%[\w\d]+)")
     load_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*load\b[^,]*,\s*[^%]*?(?P<pointer>%[\w\d\.]+)")
-    div_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div)\b[^,]*,\s*(?P<rhs>[^,\s!]+)")
+    div_re = re.compile(
+        r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div|frem|[su]?rem)\b[^,]*,\s*(?P<rhs>[^,\s!]+)"
+    )
 
     for line in taint_lines:
         br_match = br_re.search(line)
@@ -92,7 +94,7 @@ def find_load_in_ir(ir_lines, dest, pointer):
 def find_div_in_ir(ir_lines, dest):
     div_re = re.compile(
         r"(?<!\\S)" + re.escape(dest) +
-        r"\s*=\s*(?:fdiv|[su]?div)\b.*!dbg\s+!(\d+)"
+        r"\s*=\s*(?:fdiv|[su]?div|frem|[su]?rem)\b.*!dbg\s+!(\d+)"
     )
 
     for idx, line in enumerate(ir_lines):
