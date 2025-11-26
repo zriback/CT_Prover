@@ -245,10 +245,14 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                 match = loc_re.search(line)
                 if match:
                     raw_path, lineno = match.groups()
-                    last_loc = (
-                        os.path.abspath(os.path.join(base_dir, raw_path)),
-                        int(lineno),
+                    resolved_path = os.path.realpath(
+                        os.path.abspath(
+                            os.path.join(base_dir, raw_path)
+                            if not os.path.isabs(raw_path)
+                            else raw_path
+                        )
                     )
+                    last_loc = (resolved_path, int(lineno))
                 # The transfer scripts sometimes subtract 1 from the Boogie
                 # line number when printing, so accept both 0- and 1-based
                 # indices.
@@ -286,10 +290,14 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                 match = loc_re.search(line)
                 if match:
                     raw_path, lineno = match.groups()
-                    last_loc = (
-                        os.path.abspath(os.path.join(base_dir, raw_path)),
-                        int(lineno),
+                    resolved_path = os.path.realpath(
+                        os.path.abspath(
+                            os.path.join(base_dir, raw_path)
+                            if not os.path.isabs(raw_path)
+                            else raw_path
+                        )
                     )
+                    last_loc = (resolved_path, int(lineno))
                 if (
                     (idx in poss or (idx + 1) in poss)
                     and any(p.match(line) for p in compiled)
@@ -365,7 +373,7 @@ def main():
             error(f"Could not map dbg !{dbg_num} to C source; skipping.")
             continue
 
-        normalized_src = os.path.abspath(src_path)
+        normalized_src = os.path.realpath(os.path.abspath(src_path))
         if output_base:
             src_path = normalized_src
 
