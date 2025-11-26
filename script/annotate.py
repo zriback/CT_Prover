@@ -226,14 +226,24 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
     with open(trans_path, "r") as f:
         trans_lines = f.read().splitlines()
 
-    poss = set()
+    raw_poss = set()
     for line in trans_lines:
         if "{" in line and "}" in line:
-            poss.update(int(m) for m in re.findall(r"\d+", line))
+            raw_poss.update(int(m) for m in re.findall(r"\d+", line))
             break
 
-    if not poss:
+    if not raw_poss:
         return set(), set()
+
+    # Normalize the reported Boogie line numbers to tolerate both 0-based and
+    # 1-based values (and minor +/-1 deviations introduced by the transfer
+    # scripts when they adjust the assertion index).
+    normalized_poss = set()
+    for p in raw_poss:
+        normalized_poss.add(p)
+        normalized_poss.add(p + 1)
+        if p > 0:
+            normalized_poss.add(p - 1)
 
     def sourceloc_map(path):
         mapping = {}
@@ -241,7 +251,7 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
         base_dir = os.path.dirname(os.path.abspath(path))
         loc_re = re.compile(r'\{:sourceloc\s+"([^"]+)",\s*(\d+),')
         with open(path, "r", errors="ignore") as f:
-            for idx, line in enumerate(f):
+            for line_no, line in enumerate(f, start=1):
                 match = loc_re.search(line)
                 if match:
                     raw_path, lineno = match.groups()
@@ -253,11 +263,8 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                         )
                     )
                     last_loc = (resolved_path, int(lineno))
-                # The transfer scripts sometimes subtract 1 from the Boogie
-                # line number when printing, so accept both 0- and 1-based
-                # indices.
-                if (idx in poss or (idx + 1) in poss) and last_loc:
-                    mapping[idx] = last_loc
+                if line_no in normalized_poss and last_loc:
+                    mapping[line_no] = last_loc
         return mapping
 
     phase2_maps = []
@@ -286,7 +293,7 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
         base_dir = os.path.dirname(os.path.abspath(shadow_bpl_path))
         loc_re = re.compile(r'\{:sourceloc\s+"([^"]+)",\s*(\d+),')
         with open(shadow_bpl_path, "r", errors="ignore") as f:
-            for idx, line in enumerate(f):
+            for line_no, line in enumerate(f, start=1):
                 match = loc_re.search(line)
                 if match:
                     raw_path, lineno = match.groups()
@@ -299,11 +306,11 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                     )
                     last_loc = (resolved_path, int(lineno))
                 if (
-                    (idx in poss or (idx + 1) in poss)
+                    line_no in normalized_poss
                     and any(p.match(line) for p in compiled)
                     and last_loc
                 ):
-                    shadow_loc_map[idx] = last_loc
+                    shadow_loc_map[line_no] = last_loc
         phase3_locs = set(shadow_loc_map.values())
 
     return phase2_locs, phase3_locs
