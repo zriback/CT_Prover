@@ -24,7 +24,7 @@ def extract_tainted_instructions(taint_lines):
     tainted = []
     br_re = re.compile(r"br i1\s+(%[\w\d]+),\s+label\s+(%[\w\d]+),\s+label\s+(%[\w\d]+)")
     load_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*load\b[^,]*,\s*[^%]*?(?P<pointer>%[\w\d\.]+)")
-    div_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div)\b[^,]*,\s*(?P<rhs>%[\w\d\.]+)")
+    div_re = re.compile(r"(?P<dest>%[\w\d\.]+)\s*=\s*(?P<divop>fdiv|[su]?div)\b[^,]*,\s*(?P<rhs>[^,\s!]+)")
 
     for line in taint_lines:
         br_match = br_re.search(line)
