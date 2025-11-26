@@ -185,6 +185,9 @@ public:
                             case llvm::Instruction::SDiv:
                             case llvm::Instruction::UDiv:
                             case llvm::Instruction::FDiv:
+                            case llvm::Instruction::SRem:
+                            case llvm::Instruction::URem:
+                            case llvm::Instruction::FRem:
                                 TaintSeeds.push_back(BinOp->getOperand(0));
                                 TaintSeeds.push_back(BinOp->getOperand(1));
                                 break;
