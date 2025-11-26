@@ -220,7 +220,7 @@ def annotate_c_file(c_lines, tainted_line_types):
 def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
     """Recover phase-2 and phase-3 survivors mapped to source locations."""
 
-    if not (os.path.isfile(trans_path) and os.path.isfile(bool_bpl_path)):
+    if not os.path.isfile(trans_path):
         return set(), set()
 
     with open(trans_path, "r") as f:
@@ -249,12 +249,21 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                         os.path.abspath(os.path.join(base_dir, raw_path)),
                         int(lineno),
                     )
-                if idx in poss and last_loc:
+                # The transfer scripts sometimes subtract 1 from the Boogie
+                # line number when printing, so accept both 0- and 1-based
+                # indices.
+                if (idx in poss or (idx + 1) in poss) and last_loc:
                     mapping[idx] = last_loc
         return mapping
 
-    phase2_map = sourceloc_map(bool_bpl_path)
-    phase2_locs = set(phase2_map.values())
+    phase2_maps = []
+    for candidate in (bool_bpl_path, bool_bpl_path.replace("-bool.bpl", "-bool_Noloop.bpl")):
+        if os.path.isfile(candidate):
+            phase2_maps.append(sourceloc_map(candidate))
+
+    phase2_locs = set()
+    for m in phase2_maps:
+        phase2_locs.update(m.values())
 
     phase3_locs = set()
     if os.path.isfile(shadow_bpl_path):
@@ -281,7 +290,11 @@ def parse_transfer_sets(trans_path, bool_bpl_path, shadow_bpl_path):
                         os.path.abspath(os.path.join(base_dir, raw_path)),
                         int(lineno),
                     )
-                if idx in poss and any(p.match(line) for p in compiled) and last_loc:
+                if (
+                    (idx in poss or (idx + 1) in poss)
+                    and any(p.match(line) for p in compiled)
+                    and last_loc
+                ):
                     shadow_loc_map[idx] = last_loc
         phase3_locs = set(shadow_loc_map.values())
 

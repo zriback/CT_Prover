@@ -245,10 +245,6 @@ def main() -> None:
         if total_taints is not None and total_taints != phase1_count:
             output_lines.append(f"Total tainted operations: {total_taints}")
 
-        if all_sensitive is not None:
-            output_lines.append(f"All sensitive (phase 3 input): {all_sensitive}")
-        if left_sensitive is not None:
-            output_lines.append(f"Left sensitive (after phase 3): {left_sensitive}")
         if all_sensitive is None and left_sensitive is None and trans_missing_reason:
             output_lines.append(f"Phase 3 sensitivity counts unavailable: {trans_missing_reason}")
 
