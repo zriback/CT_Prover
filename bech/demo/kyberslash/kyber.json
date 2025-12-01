@@ -1,0 +1,13 @@
+{
+    "name": "kyberslash demo",
+    "version": 1.0,
+    "functions": [
+        {
+            "file": "kyber.c",
+            "name": "poly_tomsg_wrapper",
+            "params": {
+                "source": [1]
+            }
+        }
+    ]
+}
