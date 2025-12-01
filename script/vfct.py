@@ -12,8 +12,11 @@ import pandas as pd
 
 basedir = os.getcwd()
 
+CTPROVER_ROOT = os.environ["CTPROVER_ROOT"]
 
-PHASAR  ="/home/luwei/phasar/build/tools/phasar-llvm/phasar-llvm"
+PHASAR = os.path.join(
+    CTPROVER_ROOT, "phasar", "build", "tools", "phasar-llvm", "phasar-llvm"
+)
 filenames = ""
 #config 中的 libs，用空格隔开
 libs = ""
@@ -21,7 +24,9 @@ cpath = ""
 clang_opt = ""
 UNROLL = "1"
 LOOPLIMIT = "1"
-BAMPATH = "/home/luwei/bam-"
+BAMPATH = os.path.join(CTPROVER_ROOT, "bam", "bam-")
+BAM991_LIB = os.path.join(CTPROVER_ROOT, "bam", "bam-991", "lib")
+BAM991_BIN = os.path.join(CTPROVER_ROOT, "bam", "bam-991", "bin", "bam")
 
 SourceFile = []
 EntryPoint = []
@@ -285,7 +290,12 @@ def transfer(record,file,file2, recordfile = "null"):
     else:
         with open(recordfile, "w") as outfile:
             restime = runcommand(args, outfile)
-    args = "ruby -I /home/luwei/bam-991/lib /home/luwei/bam-991/bin/bam --process_mark "+ file + " -o " + file2
+    args = (
+        f"ruby -I {BAM991_LIB} {BAM991_BIN} --process_mark "
+        + file
+        + " -o "
+        + file2
+    )
     restime2 = runcommand(args)
     return restime, restime2
 

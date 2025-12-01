@@ -143,7 +143,7 @@ def trans_bool_to_shadow():
 					
 					
 	
-	args = "ruby -I /home/luwei/bam-991/lib /home/luwei/bam-991/bin/bam --process_mark "+ tshadowfile + " -o " + shadowfile
+	args = "ruby -I /home/user/CT_Prover/bam/bam-991/lib /home/user/CT_Prover/bam/bam-991/bin/bam --process_mark "+ tshadowfile + " -o " + shadowfile
 	time = runcommand(args)
 	res.append(time)
 

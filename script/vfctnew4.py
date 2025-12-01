@@ -17,8 +17,9 @@ errorlimit = "5"
 UNROLL = "1"
 LOOPLIMIT = "1"
 
-PHASAR  ="/home/luwei/phasar/build/tools/phasar-llvm/phasar-llvm"
-BAMPATH = "/home/luwei/bam-"
+CTPROVER_ROOT = os.environ["CTPROVER_ROOT"]
+PHASAR = os.path.join(CTPROVER_ROOT, "phasar/build/tools/phasar-llvm/phasar-llvm")
+BAMPATH = os.path.join(CTPROVER_ROOT, "bam/bam-")
 
 # 获取父目录名字 以及所在lib的名字
 Source = os.path.basename(os.getcwd())
@@ -279,7 +280,8 @@ def transfer(record,file,file2, recordfile = subprocess.PIPE, workdir = os.getcw
     # 需要配合bam991 一起使用
     args = "transBoolToShadow.py "+record+" "+file
     restime = runcommand(args, recordfile, workdir = workdir)
-    args = "ruby -I /home/luwei/bam-991/lib /home/luwei/bam-991/bin/bam --process_mark "+ file + " -o " + file2
+    bam_root = os.path.join(CTPROVER_ROOT, "bam/bam-991")
+    args = f"ruby -I {bam_root}/lib {bam_root}/bin/bam --process_mark {file} -o {file2}"
     restime2 = runcommand(args, workdir=workdir)
     return restime, restime2
 

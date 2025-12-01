@@ -1,3 +1,4 @@
 #!/bin/bash
 # llvm-12 tool chain
-opt-12 -enable-new-pm=0 -load /home/luwei/script/tool/removeDeadDef/luweiDelDeadDef.so -S --luweiDelDeadDef --entry-point $3 $1 > $2
+CTPROVER_ROOT="${CTPROVER_ROOT:?Please set CTPROVER_ROOT to the CT_Prover repository root}"
+opt-12 -enable-new-pm=0 -load "$CTPROVER_ROOT"/script/tool/removeDeadDef/luweiDelDeadDef.so -S --luweiDelDeadDef --entry-point $3 $1 > $2

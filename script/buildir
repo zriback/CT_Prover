@@ -1,6 +1,7 @@
 #!/bin/bash
 
 
+CTPROVER_ROOT="${CTPROVER_ROOT:?Please set CTPROVER_ROOT to the CT_Prover repository root}"
 clang_opt=""
 while getopts ":c:" o; do
     case "${o}" in
@@ -31,7 +32,7 @@ do
 dirfile=${file//.c/.bc}
 echo $dirfile
 # res=$res" "$dirfile
-clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics -I/home/luwei/smack/share/smack/include $clang_opt $file -o $dirfile
+clang-12 -c -emit-llvm -O0 -g -gcolumn-info -Xclang -disable-O0-optnone -DMEMORY_MODULE_NO_REUSE_IMPLS -fcolor-diagnostics -I"$CTPROVER_ROOT"/smack/share/smack/include $clang_opt $file -o $dirfile
 done
 # if [ $# -eq 1 ]; then
 #     mv $dirfile $totalfile

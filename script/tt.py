@@ -6,6 +6,8 @@ import time
 import os
 import sys
 import pandas as pd
+
+CTPROVER_ROOT = os.environ["CTPROVER_ROOT"]
 # process = subprocess.Popen(["export", "AA=11"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 # process.wait()
 # st = time.time()
@@ -35,8 +37,8 @@ import pandas as pd
 
 # portion = os.path.splitext("teass.c")
 # newfile = portion[0] + "-k.ll"
-# filename = os.path.basename("/home/luwei/temple/teass.c")
-# dir = os.path.dirname("/home/luwei/temple/teass.c")
+# filename = os.path.basename(os.path.join(CTPROVER_ROOT, "temple/teass.c"))
+# dir = os.path.dirname(os.path.join(CTPROVER_ROOT, "temple/teass.c"))
 # print(newfile)
 # print(filename)
 # print(dir)
@@ -62,7 +64,7 @@ import pandas as pd
 
 # header = ['example','entry-point','1','2','3','1+2','1+3','2+3','1+2+3']
 
-# with open('/home/luwei/2.csv','w',newline='') as f:
+# with open(os.path.join(CTPROVER_ROOT, '2.csv'), 'w', newline='') as f:
 #     writer = csv.writer(f)
 #     writer.writerow(header)
 
@@ -238,7 +240,7 @@ def runcommand(command, file = subprocess.PIPE, workdir = os.getcwd()):
 
 
 
-# runcommand(command="tt", workdir="/home/luwei/test")
+# runcommand(command="tt", workdir=os.path.join(CTPROVER_ROOT, "test"))
 
 # # subprocess.run(["/bin/bash -c ls"], shell=True)
 
