@@ -1,0 +1,9 @@
+PhASAR v0222
+A LLVM-based static analysis framework
+
+
+----- Finish the Analysis -----
+  %7 = sdiv i32 %6, 2, !dbg !44, !psr.id !45, !Tainted !46
+  %31 = sdiv i32 %30, 3329, !dbg !115, !psr.id !116, !Tainted !46
+all taint position!
+2

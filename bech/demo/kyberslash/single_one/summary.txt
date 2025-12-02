@@ -1,0 +1,9 @@
+Entry: kyber
+Taint operation counts:
+  sdiv: 2
+Tainted operations after phase 1: 2
+Phase 3 sensitivity counts unavailable: missing transfer file (vfct_find_bug.py does not emit -trans.txt)
+Phase timings (seconds):
+  Phase 1: 0.11342692375183105
+  Phase 2: n/a
+  Phase 3: n/a
