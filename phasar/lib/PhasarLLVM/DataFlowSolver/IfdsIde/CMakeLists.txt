@@ -2,6 +2,11 @@ file(GLOB_RECURSE IFDSIDE_SRC *.h *.cpp)
 
 find_package(Boost COMPONENTS program_options REQUIRED)
 
+set(CTPROVER_ROOT $ENV{CTPROVER_ROOT})
+if(NOT CTPROVER_ROOT)
+  set(CTPROVER_ROOT "/home/user/CT_Prover")
+endif()
+
 set(PHASAR_LINK_LIBS
   phasar_config
   phasar_utils
@@ -12,12 +17,12 @@ set(PHASAR_LINK_LIBS
   phasar_db
   phasar_taintconfig
   ${Boost_LIBRARIES}
-  	#/home/luwei/newifds/SVF/Release-build/svf-llvm/libSvfLLVM.a
-	#/home/luwei/newifds/SVF/z3.obj/bin/libz3.a
-	#/home/luwei/newifds/SVF/z3.obj/bin/libz3.so
-	/home/user/CT_Prover/Extern_PTA/SVF/Release-build/svf-llvm/libSvfLLVM.a
-	/home/user/CT_Prover/Extern_PTA/SVF/z3.obj/bin/libz3.a
-	/home/user/CT_Prover/Extern_PTA/SVF/z3.obj/bin/libz3.so
+        #/home/luwei/newifds/SVF/Release-build/svf-llvm/libSvfLLVM.a
+        #/home/luwei/newifds/SVF/z3.obj/bin/libz3.a
+        #/home/luwei/newifds/SVF/z3.obj/bin/libz3.so
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/Release-build/svf-llvm/libSvfLLVM.a
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/z3.obj/bin/libz3.a
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/z3.obj/bin/libz3.so
 )
 
 set(LLVM_LINK_COMPONENTS

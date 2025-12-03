@@ -109,11 +109,16 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 #        /home/luwei/newifds/SVF/Release-build/include
 #        /home/luwei/newifds/SVF/z3.obj/include)
 
+set(CTPROVER_ROOT $ENV{CTPROVER_ROOT})
+if(NOT CTPROVER_ROOT)
+  set(CTPROVER_ROOT "/home/user/CT_Prover")
+endif()
+
 include_directories(
-	/home/user/CT_Prover/Extern_PTA/SVF/svf/include
-	/home/user/CT_Prover/Extern_PTA/SVF/svf-llvm/include
-	/home/user/CT_Prover/Extern_PTA/SVF/Release-build/include
-	/home/user/CT_Prover/Extern_PTA/SVF/z3.obj/include)
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/svf/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/svf-llvm/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/Release-build/include
+        ${CTPROVER_ROOT}/Extern_PTA/SVF/z3.obj/include)
 
 include_directories(
   ${PHASAR_SRC_DIR}/include

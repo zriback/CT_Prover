@@ -1,3 +1,4 @@
 #!/bin/bash
 # llvm-12 tool chain
-opt-12 -enable-new-pm=0 -load /home/user/CT_Prover/script/tool/restrict/luweiRestrict.so -S --luweiRestrict $1 -o $2
+CTPROVER_ROOT="${CTPROVER_ROOT:-/home/user/CT_Prover}"
+opt-12 -enable-new-pm=0 -load "$CTPROVER_ROOT"/script/tool/restrict/luweiRestrict.so -S --luweiRestrict $1 -o $2
