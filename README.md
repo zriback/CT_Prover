@@ -1,64 +1,81 @@
 # CT-Prover
 
-This repository provides the tool for the paper "Towards Efficient Verification of Constant-Time Cryptographic Implementations".
+CT-Prover implements the verification pipelines from "Towards Efficient Verification of Constant-Time Cryptographic Implementations." The repository combines a customized SMACK frontend, PhASAR-based taint analysis, BAM product-program construction, and SVF pointer analysis to reason about constant-time properties of the benchmarks under `bech/`.
 
-# Table of Contents
+## Prerequisites
+- Linux with build essentials, `sudo`, and Python 3.
+- Clang 12, Ninja ≥ 1.10.0, Boogie ≥ 2.9.6.0, Ruby ≥ 2.7.0 (for the BAM gems). Installing these with your package manager is fine; the Clang/Boogie/Ninja versions listed here match the original setup.
+- Optional: SMACK ≥ 2.8 is available via many package managers if you prefer a prebuilt binary.
 
-- CT-Prover
-- Table of Contents
-  - Requirement
-  - Structure
-  - Getting Started Instructions
-    - 0 Install depedencies and build the necessary tools
-    - 1 Verifying Constant-time Implementations
-    - 2 Verifying Non-constant-time Implementations
+### Environment variable
+Set `CTPROVER_ROOT` to the absolute path of this repository. The build scripts, CMake configurations, and analysis runners expect it to be present, and several helper scripts guard against it being unset:
+```bash
+export CTPROVER_ROOT="$(pwd)"   # run from the repository root
+```
 
-## Requirement
+## Repository layout
+- `phasar/`: IFDS taint analysis extensions used by the verifier.
+- `Extern_PTA/`: SVF pointer-analysis fork plus helper scripts.
+- `smack/`: Customized SMACK frontend that emits Boogie with taint metadata.
+- `bam/`: Product-program construction and supporting Ruby gems.
+- `bech/`: Benchmarks organized by library/algorithm.
+- `script/`: Automation scripts for building LLVM IR, running the verification pipelines, and post-processing results.
 
-- Clang-12
-- Ruby >= 2.7.0.
-- Boogie >= 2.9.6.0
-- Ninja >= 1.10.0
+## Installation and toolchain build
+1. **Install base dependencies.** Ensure Clang 12, Ruby, Boogie, Ninja, and Python 3 are installed and available on `PATH`.
+2. **Build PhASAR with the repository patches.**
+   ```bash
+   cd phasar
+   sudo ./bootstrap.sh
+   ```
+3. **Build SMACK.** From `smack/bin`, run the provided build helper:
+   ```bash
+   cd smack/bin
+   sudo ./build.sh
+   ```
+   Make sure the resulting `smack` binary is on your `PATH` (either add the build output directory or install it system-wide). If build-from-source fails on your platform, installing SMACK ≥ 2.8 from your package manager is an alternative.
+4. **Build and install SVF.**
+   ```bash
+   cd Extern_PTA
+   ./build.sh
+   ./setup.sh
+   ```
+5. **Build the BAM Ruby gems.**
+   ```bash
+   cd bam
+   ./build_all_gems.sh           # add --install-dir <dir> to install locally
+   ```
 
-## Structure
+After the above, ensure `CTPROVER_ROOT` and the SMACK, PhASAR, and SVF binaries are discoverable on `PATH` (or referenced via their full paths in config files).
 
-- phasar: The IFDS taint analysis of our tool.
-- Extern_PTA: The tool providing point analysis.
-- bam: The tool to construct product programs on Boogie IR.
-- smack: A modification of SMACK which transfer LLVM IR into Boogie IR with taint analysis information.
-- bech: The benchmarks of our work.
-- script: The script used to automate the jobs such as extract the information from analysis result, collect the time information, etc.
+## Running the verification pipelines
+The runners expect to be launched from a benchmark directory (for example, `bech/demo/kyberslash`). Each benchmark directory contains a `config.json` and the LLVM/Boogie artifacts the scripts expect.
 
-## Getting Started Instructions
+- **Full pipeline:** `script/vfct_all.py` orchestrates all phases (add-key transformation, taint analysis, Boolean and shadow product generation, verification, and timing). Run it from the benchmark directory:
+  ```bash
+  python3 ../../script/vfct_all.py      # assumes ../config.json or an argument pointing to config.json
+  ```
+- **Only phases 1–2–3:** `script/vfct_123.py` limits execution to the combined one+two+three workflow and writes phase timing CSVs:
+  ```bash
+  python3 ../../script/vfct_123.py
+  ```
+- **Only phase 1:** `script/vfct_only1.py` runs just the add-key plus taint-analysis stage and emits the corresponding timing CSVs and summary:
+  ```bash
+  python3 ../../script/vfct_only1.py
+  ```
 
-- 0 Install depedencies and build the necessary tools
-  - Install the appropriate version of clang, ruby, boogie and ninja through official source
-  - Build the phasar as follows:
+The runners create subdirectories (e.g., `one_and_two_and_three/` or `single_one/`) with intermediate artifacts, timing CSVs (`detailtime.csv`, `totaltime.csv`), and result logs.
 
-    ```
-    cd phasar
-    ./bootstrap.sh
-    ```
-  - Build the smack from source as follows:
+## Post-processing helpers
+- **`script/summarize_results.py`** parses the generated taint and transfer outputs plus timing CSVs to produce a concise `summary.txt` that lists tainted operation counts, surviving sensitive locations across phases, and per-phase timings. Invoke it from within a result directory (or let `vfct_only1.py` call it automatically):
+  ```bash
+  python3 ../../script/summarize_results.py
+  ```
+- **`script/annotate.py`** maps tainted LLVM instructions back to C source locations using debug metadata and writes annotated copies of the source with inline comments such as `// TAINTED BRANCH` or `// TAINTED DATA ACCESS`.
+  ```bash
+  python3 ../../script/annotate.py <path/to/taintres.txt> <path/to/module.ll> [output_dir]
+  ```
+  The optional `output_dir` controls where the annotated copies are written (defaults to the original source directory).
 
-    ```
-    cd smack/build
-    ninja
-    ```
-  - Script
-
-    Add the path of scropt into your environment.
-- 1 Verifying Constant-time Implementations
-  - In the bech directory, there are directories for various algorithm libraries. In the directory of each libraries is the benchmarks of algorithm.
-  - Get into any benchmarks of algorithm. Run the command
-
-    ```
-    vfct
-    ```
-    to carry out the analysis. The analysis results will automatically generated into the file  with .txt and .csv suffix
-- 2 Verifying Non-constant-time Implementations
-  - Same with the above except run the command
-
-    ```
-    vfct_find_bug.py
-    ```
+## Running the benchmark suites
+Benchmark directories under `bech/` provide `compile.sh` helpers that rely on `CTPROVER_ROOT` to locate SMACK headers. After compiling a benchmark to LLVM IR, use one of the runners above (`vfct_all.py`, `vfct_123.py`, or `vfct_only1.py`) to verify constant-time behavior. Generated CSVs and summaries capture pass/fail information and timings across the configured phases.
