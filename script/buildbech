@@ -2,7 +2,7 @@
 #专门用于生成wrapper并且链接lib.bc的脚本
 #可以指定wrapper所需要的头文件
 #在生成之后调用deldeadfunc 去删除不需要的函数 entry point 为参数三
-CTPROVER_ROOT="${CTPROVER_ROOT:-/home/user/CT_Prover}"
+CTPROVER_ROOT="${CTPROVER_ROOT:?Please set CTPROVER_ROOT to the CT_Prover repository root}"
 wrapper=$1
 lib=$2
 entry=$3

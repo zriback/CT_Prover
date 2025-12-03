@@ -1,4 +1,4 @@
 #!/bin/bash
-CTPROVER_ROOT="${CTPROVER_ROOT:-/home/user/CT_Prover}"
+CTPROVER_ROOT="${CTPROVER_ROOT:?Please set CTPROVER_ROOT to the CT_Prover repository root}"
 "$CTPROVER_ROOT"/phasar/build/tools/phasar-llvm/phasar-llvm -m $1 -D ifds-taint --analysis-config --emit-text-report $2 >> $3 2>&1
 # 需要三个参数 module taint config 和 输出txt

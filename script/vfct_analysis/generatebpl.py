@@ -17,9 +17,11 @@ errorlimit = "5"
 UNROLL = "1"
 LOOPLIMIT = "1"
 
-CTPROVER_ROOT = os.environ.get("CTPROVER_ROOT", "/home/user/CT_Prover")
-PHASAR = os.path.join(CTPROVER_ROOT, "phasar/build/tools/phasar-llvm/phasar-llvm")
-BAMPATH = os.path.join(CTPROVER_ROOT, "bam/bam-")
+CTPROVER_ROOT = os.environ["CTPROVER_ROOT"]
+PHASAR = os.path.join(
+    CTPROVER_ROOT, "phasar", "build", "tools", "phasar-llvm", "phasar-llvm"
+)
+BAMPATH = os.path.join(CTPROVER_ROOT, "bam", "bam-")
 
 # 获取父目录名字 以及所在lib的名字
 Source = os.path.basename(os.getcwd())

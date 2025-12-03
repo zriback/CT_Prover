@@ -4,7 +4,7 @@
 # 因为path取的是最后一个文件的path， 实现这样一个功能，所以文件都在最后一个文件的路径里生成
 # 返回以最后一个文件名为名的ir文件
 
-CTPROVER_ROOT="${CTPROVER_ROOT:-/home/user/CT_Prover}"
+CTPROVER_ROOT="${CTPROVER_ROOT:?Please set CTPROVER_ROOT to the CT_Prover repository root}"
 clang_opt=""
 while getopts ":c:" o; do
     case "${o}" in
